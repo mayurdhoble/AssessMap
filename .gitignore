@@ -1,0 +1,27 @@
+# Data files (sensitive — do not commit)
+*.csv
+*.xlsx
+*.xls
+*.pptx
+
+# Python
+__pycache__/
+*.py[cod]
+.env
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+dist/
+.env.local
+.env.production
+
+# Vite / build artifacts
+frontend/.vite/
+
+# OS
+.DS_Store
+Thumbs.db
