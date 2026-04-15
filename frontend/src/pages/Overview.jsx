@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell,
+  ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts'
 import { FileText, Building2, Users, BookOpen, ClipboardList, LayoutGrid } from 'lucide-react'
 import KPICard from '../components/KPICard'
@@ -10,6 +10,19 @@ import api from '../api/client'
 
 const COLORS = ['#FF6B35', '#6C3EB9', '#3B82F6', '#10B981', '#F59E0B',
                 '#EF4444', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316']
+
+const RADIAN = Math.PI / 180
+const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+  if (percent < 0.05) return null
+  const radius = innerRadius + (outerRadius - innerRadius) * 0.55
+  const x = cx + radius * Math.cos(-midAngle * RADIAN)
+  const y = cy + radius * Math.sin(-midAngle * RADIAN)
+  return (
+    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={600}>
+      {`${(percent * 100).toFixed(0)}%`}
+    </text>
+  )
+}
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
@@ -79,7 +92,7 @@ export default function Overview() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
           <h3 className="font-semibold text-gray-700 mb-4">Library Split</h3>
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={260}>
             <PieChart>
               <Pie
                 data={libSplit}
@@ -88,19 +101,20 @@ export default function Overview() {
                 cx="50%"
                 cy="50%"
                 outerRadius={85}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                 labelLine={false}
+                label={renderPieLabel}
               >
                 {libSplit?.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
               </Pie>
               <Tooltip formatter={(v) => v.toLocaleString()} />
+              <Legend />
             </PieChart>
           </ResponsiveContainer>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
           <h3 className="font-semibold text-gray-700 mb-4">Navigation Type Split</h3>
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={260}>
             <PieChart>
               <Pie
                 data={navSplit}
@@ -109,12 +123,13 @@ export default function Overview() {
                 cx="50%"
                 cy="50%"
                 outerRadius={85}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                 labelLine={false}
+                label={renderPieLabel}
               >
                 {navSplit?.map((_, i) => <Cell key={i} fill={COLORS[i + 2]} />)}
               </Pie>
               <Tooltip formatter={(v) => v.toLocaleString()} />
+              <Legend />
             </PieChart>
           </ResponsiveContainer>
         </div>
