@@ -93,7 +93,7 @@ export default function Layout() {
               text-white text-sm font-medium transition-colors ${collapsed ? 'justify-center' : ''}`}
           >
             <Upload size={16} className="shrink-0" />
-            {!collapsed && 'Upload Data'}
+            {!collapsed && (info?.loaded ? 'Add More Data' : 'Upload Data')}
           </button>
 
           {info?.loaded && (
