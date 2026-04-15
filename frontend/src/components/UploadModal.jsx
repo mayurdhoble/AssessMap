@@ -22,10 +22,15 @@ export default function UploadModal({ onClose, onSuccess }) {
       })
       setStatus('success')
       setResult(data)
-      // Use browser file.name as fallback in case backend filename is missing
       const displayName = data.filename || file.name || 'file'
-      const displayRows = data.rows != null ? data.rows.toLocaleString() : '?'
-      setMessage(`Loaded ${displayRows} rows from "${displayName}"`)
+      const newRows = data.new_rows != null ? data.new_rows.toLocaleString() : '?'
+      const totalRows = data.rows != null ? data.rows.toLocaleString() : '?'
+      const isAppend = data.new_rows != null && data.rows != null && data.new_rows !== data.rows
+      setMessage(
+        isAppend
+          ? `Added ${newRows} new rows from "${displayName}" — ${totalRows} total rows in dataset`
+          : `Loaded ${totalRows} rows from "${displayName}"`
+      )
       qc.invalidateQueries()
     } catch (e) {
       setStatus('error')

@@ -7,7 +7,6 @@ router = APIRouter(prefix="/api", tags=["upload"])
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     content = await file.read()
-    # file.filename can be None on some browsers/OS — fall back to a safe default
     filename = file.filename or "uploaded_file.csv"
     try:
         result = store.load(content, filename)
@@ -16,6 +15,13 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse file: {str(e)}")
+
+
+@router.delete("/data")
+def clear_data():
+    """Wipe all persisted data and reset in-memory state."""
+    store.clear()
+    return {"success": True, "message": "All data cleared"}
 
 
 @router.get("/data/info")

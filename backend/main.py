@@ -1,12 +1,26 @@
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import upload, filters, overview, trends, usage, qb, company, category
+from services.data_service import store
 from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="iMocha Analytics Dashboard", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Load persisted dataset from Railway volume on startup
+    store.load_from_disk()
+    if store.is_loaded():
+        print(f"[Startup] Loaded {len(store.df):,} rows from disk ({store.filename})")
+    else:
+        print("[Startup] No persisted dataset found — waiting for first upload")
+    yield
+
+
+app = FastAPI(title="iMocha Analytics Dashboard", version="1.0.0", lifespan=lifespan)
 
 # Build allowed origins — always include localhost for dev,
 # plus any production frontend URL set via FRONTEND_URL env var
