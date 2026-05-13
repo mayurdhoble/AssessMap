@@ -28,7 +28,7 @@ def clear_data():
 def data_info():
     if not store.is_loaded():
         return {"loaded": False}
-    has_date = "Date" in store.df.columns and store.df["Date"].notna().any()
+    has_date = bool("Date" in store.df.columns and store.df["Date"].notna().any())
     return {
         "loaded": True,
         "filename": store.filename,

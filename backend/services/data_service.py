@@ -114,7 +114,7 @@ class DataStore:
         self._save_to_disk()
 
         total_rows = len(self.df)
-        has_date = "Date" in self.df.columns and self.df["Date"].notna().any()
+        has_date = bool("Date" in self.df.columns and self.df["Date"].notna().any())
         return {
             "new_rows": new_rows,
             "rows": total_rows,
