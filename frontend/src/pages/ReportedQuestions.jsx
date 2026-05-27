@@ -44,6 +44,7 @@ export default function ReportedQuestions() {
   const [draft, setDraft] = useState(EMPTY)
   const [applied, setApplied] = useState(EMPTY)
   const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(50)
   const [autoRefresh, setAutoRefresh] = useState(false)
   const [detail, setDetail] = useState(null)
 
@@ -64,8 +65,8 @@ export default function ReportedQuestions() {
   })
 
   const { data: list, isLoading } = useQuery({
-    queryKey: ['rq-list', applied, page],
-    queryFn: () => api.get('/v1/reported-questions', { params: { ...toParams(applied), page, limit: 50 } }).then((r) => r.data),
+    queryKey: ['rq-list', applied, page, limit],
+    queryFn: () => api.get('/v1/reported-questions', { params: { ...toParams(applied), page, limit } }).then((r) => r.data),
     refetchInterval: interval,
   })
 
@@ -92,6 +93,7 @@ export default function ReportedQuestions() {
 
   const applyFilters = () => { setApplied(draft); setPage(1) }
   const clearFilters = () => { setDraft(EMPTY); setApplied(EMPTY); setPage(1) }
+  const changeLimit = (val) => { setLimit(Number(val)); setPage(1) }
 
   const pieData = stats
     ? [{ name: 'Resolved', value: stats.resolved }, { name: 'Pending', value: stats.pending }]
@@ -326,19 +328,70 @@ export default function ReportedQuestions() {
           </table>
         </div>
 
-        {list && list.pages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100">
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">
-              ← Previous
-            </button>
-            <span className="text-sm text-gray-500">Page {page} of {list.pages}</span>
-            <button onClick={() => setPage((p) => Math.min(list.pages, p + 1))} disabled={page === list.pages}
-              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">
-              Next →
-            </button>
+        {/* Pagination bar — always visible */}
+        <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 flex-wrap gap-3">
+          {/* Left: record info + rows-per-page */}
+          <div className="flex items-center gap-3 text-sm text-gray-500">
+            <span>
+              {list
+                ? `Showing ${((page - 1) * limit) + 1}–${Math.min(page * limit, list.total)} of ${list.total.toLocaleString()} records`
+                : '—'}
+            </span>
+            <select
+              value={limit}
+              onChange={(e) => changeLimit(e.target.value)}
+              className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-orange-400"
+            >
+              {[10, 25, 50, 100].map((n) => (
+                <option key={n} value={n}>{n} / page</option>
+              ))}
+            </select>
           </div>
-        )}
+
+          {/* Right: page buttons */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage(1)} disabled={page === 1}
+              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50"
+            >«</button>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50"
+            >‹ Prev</button>
+
+            {/* Numbered page buttons */}
+            {list && (() => {
+              const total = list.pages
+              const delta = 2
+              const range = []
+              for (let i = Math.max(1, page - delta); i <= Math.min(total, page + delta); i++) range.push(i)
+              const pages = []
+              if (range[0] > 1) { pages.push(1); if (range[0] > 2) pages.push('…') }
+              range.forEach((p) => pages.push(p))
+              if (range[range.length - 1] < total) { if (range[range.length - 1] < total - 1) pages.push('…'); pages.push(total) }
+              return pages.map((p, i) =>
+                p === '…'
+                  ? <span key={`ellipsis-${i}`} className="px-2 py-1.5 text-xs text-gray-400">…</span>
+                  : <button key={p} onClick={() => setPage(p)}
+                      className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                        p === page
+                          ? 'bg-orange-500 text-white border-orange-500'
+                          : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                      }`}
+                    >{p}</button>
+              )
+            })()}
+
+            <button
+              onClick={() => setPage((p) => Math.min(list?.pages ?? 1, p + 1))} disabled={page === list?.pages}
+              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50"
+            >Next ›</button>
+            <button
+              onClick={() => setPage(list?.pages ?? 1)} disabled={page === list?.pages}
+              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50"
+            >»</button>
+          </div>
+        </div>
       </div>
       {/* Detail Modal */}
       {detail && (
