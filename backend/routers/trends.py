@@ -37,10 +37,11 @@ def monthly_trends(
     monthly.columns = ["Year", "Month", "Reports"]
 
     # Daily average = reports / days in that calendar month
-    monthly["DailyAvg"] = monthly.apply(
-        lambda row: round(row["Reports"] / calendar.monthrange(int(row["Year"]), int(row["Month"]))[1]),
+    days = monthly.apply(
+        lambda row: calendar.monthrange(int(row["Year"]), int(row["Month"]))[1],
         axis=1,
-    ).astype(int)
+    )
+    monthly["DailyAvg"] = (monthly["Reports"] / days).round().astype(int)
 
     years = sorted(monthly["Year"].unique().tolist(), reverse=True)
 

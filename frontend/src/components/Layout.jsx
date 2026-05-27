@@ -3,19 +3,21 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   LayoutDashboard, TrendingUp, BarChart2, BookOpen,
-  Building2, Tag, Upload, Menu, ChevronLeft, Trash2, AlertTriangle,
+  Building2, Tag, Upload, Menu, ChevronLeft,
+  Trash2, AlertTriangle, Flag, LogOut,
 } from 'lucide-react'
 import api from '../api/client'
 import UploadModal from './UploadModal'
 import GlobalFilters from './GlobalFilters'
 
 const NAV = [
-  { path: '/overview',  label: 'Overview',        icon: LayoutDashboard },
-  { path: '/trends',    label: 'Monthly Trends',  icon: TrendingUp },
-  { path: '/usage',     label: 'Usage Insights',  icon: BarChart2 },
-  { path: '/qb',        label: 'QB Analytics',    icon: BookOpen },
-  { path: '/company',   label: 'Companies',       icon: Building2 },
-  { path: '/category',  label: 'Categories',      icon: Tag },
+  { path: '/overview',            label: 'Overview',            icon: LayoutDashboard },
+  { path: '/trends',              label: 'Monthly Trends',      icon: TrendingUp },
+  { path: '/usage',               label: 'Usage Insights',      icon: BarChart2 },
+  { path: '/qb',                  label: 'QB Analytics',        icon: BookOpen },
+  { path: '/company',             label: 'Companies',           icon: Building2 },
+  { path: '/category',            label: 'Categories',          icon: Tag },
+  { path: '/reported-questions',  label: 'Reported Questions',  icon: Flag },
 ]
 
 export default function Layout() {
@@ -44,6 +46,14 @@ export default function Layout() {
     }
   }
 
+  const handleLogout = () => {
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('auth_user')
+    navigate('/login', { replace: true })
+  }
+
+  const username = localStorage.getItem('auth_user') || 'Admin'
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Sidebar */}
@@ -53,15 +63,35 @@ export default function Layout() {
         {/* Logo row */}
         <div className="h-14 flex items-center justify-between px-3 border-b border-gray-100">
           {!collapsed && (
-            <span className="font-bold text-gray-800 text-sm truncate">iMocha Analytics</span>
+            <img src="/logoimocha.png" alt="iMocha" className="h-7 ml-1" />
           )}
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="ml-auto p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-          >
-            {collapsed ? <Menu size={18} /> : <ChevronLeft size={18} />}
-          </button>
+          {collapsed && (
+            <img src="/favicon.png" alt="iMocha" className="h-7 w-7 mx-auto" />
+          )}
+          {!collapsed && (
+            <button
+              onClick={() => setCollapsed(true)}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            >
+              <ChevronLeft size={18} />
+            </button>
+          )}
+          {collapsed && (
+            <button
+              onClick={() => setCollapsed(false)}
+              className="absolute left-2 mt-14 p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors hidden"
+            />
+          )}
         </div>
+
+        {collapsed && (
+          <button
+            onClick={() => setCollapsed(false)}
+            className="flex justify-center py-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <Menu size={18} />
+          </button>
+        )}
 
         {/* Nav links */}
         <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
@@ -84,11 +114,11 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* Upload button + file info */}
+        {/* Upload + Clear + Logout */}
         <div className="p-2 border-t border-gray-100 space-y-1.5">
           <button
             onClick={() => setUploadOpen(true)}
-            title={collapsed ? 'Upload Data' : undefined}
+            title={collapsed ? (info?.loaded ? 'Add More Data' : 'Upload Data') : undefined}
             className={`w-full flex items-center gap-2 px-2.5 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600
               text-white text-sm font-medium transition-colors ${collapsed ? 'justify-center' : ''}`}
           >
@@ -113,17 +143,27 @@ export default function Layout() {
               {info.filename} · {info.rows?.toLocaleString()} rows
             </p>
           )}
+
+          <button
+            onClick={handleLogout}
+            title={collapsed ? 'Sign Out' : undefined}
+            className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-gray-400 hover:bg-gray-50
+              hover:text-gray-600 text-sm font-medium transition-colors ${collapsed ? 'justify-center' : ''}`}
+          >
+            <LogOut size={15} className="shrink-0" />
+            {!collapsed && (
+              <span className="flex-1 text-left truncate">Sign out · {username}</span>
+            )}
+          </button>
         </div>
       </aside>
 
       {/* Main area */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top filter bar — min-height so it expands when filters wrap */}
         <header className="min-h-[56px] bg-white border-b border-gray-100 flex items-center px-5 py-2 shrink-0 z-20 relative">
           <GlobalFilters />
         </header>
 
-        {/* Page content */}
         <main className="flex-1 overflow-auto p-6">
           {!info?.loaded ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
@@ -167,18 +207,12 @@ export default function Layout() {
               This will permanently delete all uploaded data from the server. This action cannot be undone.
             </p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setClearConfirm(false)}
-                disabled={clearing}
-                className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
-              >
+              <button onClick={() => setClearConfirm(false)} disabled={clearing}
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors">
                 Cancel
               </button>
-              <button
-                onClick={handleClear}
-                disabled={clearing}
-                className="flex-1 px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors disabled:opacity-60"
-              >
+              <button onClick={handleClear} disabled={clearing}
+                className="flex-1 px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors disabled:opacity-60">
                 {clearing ? 'Clearing…' : 'Yes, Clear All'}
               </button>
             </div>
