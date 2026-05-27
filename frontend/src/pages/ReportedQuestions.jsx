@@ -4,7 +4,7 @@ import {
   PieChart, Pie, Cell, Legend, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
 } from 'recharts'
-import { Download, CheckCircle, Clock, AlertCircle, BarChart2, RefreshCw, X, ExternalLink } from 'lucide-react'
+import { Download, CheckCircle, Clock, AlertCircle, BarChart2, RefreshCw, X, ExternalLink, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import KPICard from '../components/KPICard'
 import api from '../api/client'
 
@@ -328,38 +328,41 @@ export default function ReportedQuestions() {
           </table>
         </div>
 
-        {/* Pagination bar — always visible */}
-        <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 flex-wrap gap-3">
-          {/* Left: record info + rows-per-page */}
-          <div className="flex items-center gap-3 text-sm text-gray-500">
-            <span>
+        {/* Pagination bar */}
+        <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100 flex-wrap gap-4 bg-gray-50/50">
+          {/* Left: record count + rows-per-page */}
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-500">
               {list
-                ? `Showing ${((page - 1) * limit) + 1}–${Math.min(page * limit, list.total)} of ${list.total.toLocaleString()} records`
+                ? <><span className="font-semibold text-gray-700">{((page - 1) * limit) + 1}–{Math.min(page * limit, list.total)}</span> of <span className="font-semibold text-gray-700">{list.total.toLocaleString()}</span> records</>
                 : '—'}
             </span>
             <select
               value={limit}
               onChange={(e) => changeLimit(e.target.value)}
-              className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-orange-400"
+              className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-600 font-medium focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white cursor-pointer"
             >
               {[10, 25, 50, 100].map((n) => (
-                <option key={n} value={n}>{n} / page</option>
+                <option key={n} value={n}>{n} rows</option>
               ))}
             </select>
           </div>
 
-          {/* Right: page buttons */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setPage(1)} disabled={page === 1}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50"
-            >«</button>
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50"
-            >‹ Prev</button>
+          {/* Right: navigation */}
+          <div className="flex items-center gap-1.5">
+            {/* First */}
+            <button onClick={() => setPage(1)} disabled={page === 1}
+              title="First page"
+              className="p-2 rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-orange-50 hover:border-orange-300 hover:text-orange-600 disabled:opacity-35 disabled:cursor-not-allowed transition-colors">
+              <ChevronsLeft size={15} />
+            </button>
+            {/* Prev */}
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-600 hover:bg-orange-50 hover:border-orange-300 hover:text-orange-600 disabled:opacity-35 disabled:cursor-not-allowed transition-colors">
+              <ChevronLeft size={14} /> Prev
+            </button>
 
-            {/* Numbered page buttons */}
+            {/* Numbered pages */}
             {list && (() => {
               const total = list.pages
               const delta = 2
@@ -367,29 +370,32 @@ export default function ReportedQuestions() {
               for (let i = Math.max(1, page - delta); i <= Math.min(total, page + delta); i++) range.push(i)
               const pages = []
               if (range[0] > 1) { pages.push(1); if (range[0] > 2) pages.push('…') }
-              range.forEach((p) => pages.push(p))
+              range.forEach((n) => pages.push(n))
               if (range[range.length - 1] < total) { if (range[range.length - 1] < total - 1) pages.push('…'); pages.push(total) }
-              return pages.map((p, i) =>
-                p === '…'
-                  ? <span key={`ellipsis-${i}`} className="px-2 py-1.5 text-xs text-gray-400">…</span>
-                  : <button key={p} onClick={() => setPage(p)}
-                      className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
-                        p === page
-                          ? 'bg-orange-500 text-white border-orange-500'
-                          : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+              return pages.map((n, i) =>
+                n === '…'
+                  ? <span key={`el-${i}`} className="px-1.5 text-sm text-gray-400 select-none">…</span>
+                  : <button key={n} onClick={() => setPage(n)}
+                      className={`min-w-[36px] px-3 py-1.5 rounded-lg border text-sm font-semibold transition-colors ${
+                        n === page
+                          ? 'bg-orange-500 text-white border-orange-500 shadow-sm'
+                          : 'bg-white border-gray-300 text-gray-600 hover:bg-orange-50 hover:border-orange-300 hover:text-orange-600'
                       }`}
-                    >{p}</button>
+                    >{n}</button>
               )
             })()}
 
-            <button
-              onClick={() => setPage((p) => Math.min(list?.pages ?? 1, p + 1))} disabled={page === list?.pages}
-              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50"
-            >Next ›</button>
-            <button
-              onClick={() => setPage(list?.pages ?? 1)} disabled={page === list?.pages}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50"
-            >»</button>
+            {/* Next */}
+            <button onClick={() => setPage((p) => Math.min(list?.pages ?? 1, p + 1))} disabled={page === list?.pages}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-600 hover:bg-orange-50 hover:border-orange-300 hover:text-orange-600 disabled:opacity-35 disabled:cursor-not-allowed transition-colors">
+              Next <ChevronRight size={14} />
+            </button>
+            {/* Last */}
+            <button onClick={() => setPage(list?.pages ?? 1)} disabled={page === list?.pages}
+              title="Last page"
+              className="p-2 rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-orange-50 hover:border-orange-300 hover:text-orange-600 disabled:opacity-35 disabled:cursor-not-allowed transition-colors">
+              <ChevronsRight size={15} />
+            </button>
           </div>
         </div>
       </div>
