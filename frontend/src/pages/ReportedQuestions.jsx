@@ -4,7 +4,7 @@ import {
   PieChart, Pie, Cell, Legend, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
 } from 'recharts'
-import { Download, CheckCircle, Clock, AlertCircle, BarChart2 } from 'lucide-react'
+import { Download, CheckCircle, Clock, AlertCircle, BarChart2, RefreshCw } from 'lucide-react'
 import KPICard from '../components/KPICard'
 import api from '../api/client'
 
@@ -44,22 +44,28 @@ export default function ReportedQuestions() {
   const [draft, setDraft] = useState(EMPTY)
   const [applied, setApplied] = useState(EMPTY)
   const [page, setPage] = useState(1)
+  const [autoRefresh, setAutoRefresh] = useState(false)
 
   const set = (key) => (e) => setDraft((p) => ({ ...p, [key]: e.target.value }))
+
+  const interval = autoRefresh ? 10_000 : false
 
   const { data: options } = useQuery({
     queryKey: ['rq-options'],
     queryFn: () => api.get('/v1/reported-questions/filter-options').then((r) => r.data),
+    refetchInterval: interval,
   })
 
   const { data: stats } = useQuery({
     queryKey: ['rq-analytics', applied],
     queryFn: () => api.get('/v1/reported-questions/analytics', { params: toParams(applied) }).then((r) => r.data),
+    refetchInterval: interval,
   })
 
   const { data: list, isLoading } = useQuery({
     queryKey: ['rq-list', applied, page],
     queryFn: () => api.get('/v1/reported-questions', { params: { ...toParams(applied), page, limit: 50 } }).then((r) => r.data),
+    refetchInterval: interval,
   })
 
   const toggle = useMutation({
@@ -93,15 +99,34 @@ export default function ReportedQuestions() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-bold text-gray-800">Reported Questions</h1>
-        <button
-          onClick={handleExport}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          <Download size={15} />
-          Export to Excel
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Auto-refresh toggle */}
+          <button
+            onClick={() => setAutoRefresh((v) => !v)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+              autoRefresh
+                ? 'bg-green-50 border-green-300 text-green-700'
+                : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            <RefreshCw size={14} className={autoRefresh ? 'animate-spin' : ''} />
+            <span>Auto Refresh</span>
+            <span className={`w-8 h-4 rounded-full transition-colors relative ${autoRefresh ? 'bg-green-500' : 'bg-gray-300'}`}>
+              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${autoRefresh ? 'left-4' : 'left-0.5'}`} />
+            </span>
+            <span className="text-xs opacity-70">{autoRefresh ? '10s' : 'Off'}</span>
+          </button>
+
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <Download size={15} />
+            Export to Excel
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}
