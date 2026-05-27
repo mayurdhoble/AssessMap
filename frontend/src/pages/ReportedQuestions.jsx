@@ -4,7 +4,7 @@ import {
   PieChart, Pie, Cell, Legend, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
 } from 'recharts'
-import { Download, CheckCircle, Clock, AlertCircle, BarChart2, RefreshCw } from 'lucide-react'
+import { Download, CheckCircle, Clock, AlertCircle, BarChart2, RefreshCw, X, ExternalLink } from 'lucide-react'
 import KPICard from '../components/KPICard'
 import api from '../api/client'
 
@@ -45,6 +45,7 @@ export default function ReportedQuestions() {
   const [applied, setApplied] = useState(EMPTY)
   const [page, setPage] = useState(1)
   const [autoRefresh, setAutoRefresh] = useState(false)
+  const [detail, setDetail] = useState(null)
 
   const set = (key) => (e) => setDraft((p) => ({ ...p, [key]: e.target.value }))
 
@@ -258,14 +259,15 @@ export default function ReportedQuestions() {
                 <th className="px-4 py-3 text-left font-medium">Comment</th>
                 <th className="px-4 py-3 text-left font-medium">Status</th>
                 <th className="px-4 py-3 text-left font-medium">Action</th>
+                <th className="px-4 py-3 text-left font-medium">Detail</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {isLoading && (
-                <tr><td colSpan={9} className="text-center py-10 text-gray-400">Loading…</td></tr>
+                <tr><td colSpan={10} className="text-center py-10 text-gray-400">Loading…</td></tr>
               )}
               {!isLoading && list?.items?.length === 0 && (
-                <tr><td colSpan={9} className="text-center py-10 text-gray-400">No issues found</td></tr>
+                <tr><td colSpan={10} className="text-center py-10 text-gray-400">No issues found</td></tr>
               )}
               {list?.items?.map((row) => (
                 <tr key={row.id} className="hover:bg-gray-50/60 transition-colors">
@@ -309,6 +311,15 @@ export default function ReportedQuestions() {
                       {row.resolved ? 'Reopen' : 'Resolve'}
                     </button>
                   </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => setDetail(row)}
+                      className="flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 font-medium hover:underline"
+                    >
+                      <ExternalLink size={12} />
+                      View
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -329,6 +340,72 @@ export default function ReportedQuestions() {
           </div>
         )}
       </div>
+      {/* Detail Modal */}
+      {detail && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setDetail(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}>
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white rounded-t-xl">
+              <div>
+                <h2 className="font-semibold text-gray-800">Issue #{detail.question_issue_id}</h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Reported on {detail.reported_on ? new Date(detail.reported_on).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                </p>
+              </div>
+              <button onClick={() => setDetail(null)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div className="px-6 py-5 space-y-5">
+              {/* Status badge */}
+              <div>
+                {detail.resolved
+                  ? <span className="inline-flex items-center gap-1 bg-green-50 text-green-700 text-xs px-3 py-1 rounded-full font-medium">✓ Resolved</span>
+                  : <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-xs px-3 py-1 rounded-full font-medium">○ Pending</span>
+                }
+              </div>
+
+              {/* Info grid */}
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  ['Candidate Email', detail.candidate_email],
+                  ['Recruiter Email', detail.recruiter_email],
+                  ['Skill', detail.skill],
+                  ['Question ID', detail.question_id],
+                  ['Problem Type', detail.problem_type],
+                  ['Issue Status', detail.issue_status],
+                ].map(([label, value]) => (
+                  <div key={label} className="bg-gray-50 rounded-lg px-4 py-3">
+                    <p className="text-xs text-gray-400 mb-0.5">{label}</p>
+                    <p className="text-sm text-gray-800 font-medium break-all">{value || '—'}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Comment */}
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Comment from Candidate</p>
+                <div className="bg-orange-50 border border-orange-100 rounded-lg px-4 py-3 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                  {detail.comment || 'No comment provided'}
+                </div>
+              </div>
+
+              {/* Resolved by */}
+              {detail.resolved && detail.resolved_by && (
+                <div className="bg-green-50 border border-green-100 rounded-lg px-4 py-3 text-sm text-gray-600">
+                  Resolved by <span className="font-medium text-green-700">{detail.resolved_by}</span>
+                  {detail.resolved_at && (
+                    <> on {new Date(detail.resolved_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
