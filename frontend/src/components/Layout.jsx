@@ -63,10 +63,10 @@ export default function Layout() {
         {/* Logo row */}
         <div className="h-14 flex items-center justify-between px-3 border-b border-gray-100">
           {!collapsed && (
-            <img src="/logoimocha.png" alt="iMocha" className="h-9 ml-1" />
+            <img src="/logoimocha.png" alt="iMocha" className="h-11 ml-1" />
           )}
           {collapsed && (
-            <img src="/favicon.png" alt="iMocha" className="h-9 w-9 mx-auto" />
+            <img src="/favicon.png" alt="iMocha" className="h-11 w-11 mx-auto" />
           )}
           {!collapsed && (
             <button
