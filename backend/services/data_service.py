@@ -191,7 +191,8 @@ class DataStore:
         if date_from and "Date" in df.columns:
             df = df[df["Date"] >= pd.to_datetime(date_from)]
         if date_to and "Date" in df.columns:
-            df = df[df["Date"] <= pd.to_datetime(date_to)]
+            # Include the entire last day (up to 23:59:59)
+            df = df[df["Date"] < pd.to_datetime(date_to) + pd.Timedelta(days=1)]
         if companies:
             df = df[df["Company Name"].isin(companies)]
         if qbs:
