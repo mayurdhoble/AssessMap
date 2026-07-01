@@ -15,8 +15,8 @@ def _get_conn():
         database=os.getenv("DB_NAME", ""),
         user=os.getenv("DB_USER", ""),
         password=os.getenv("DB_PASSWORD", ""),
-        timeout=120,
-        login_timeout=15,
+        timeout=300,
+        login_timeout=60,
     )
 
 

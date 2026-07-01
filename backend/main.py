@@ -33,14 +33,19 @@ def _sync_reported_questions():
     from services import mssql_service
     if not mssql_service.is_configured():
         return
-    db = database.SessionLocal()
-    try:
-        result = reported_questions._do_rq_sync(db)
-        print(f"[Scheduler] RQ sync: {result['inserted']} inserted, {result['skipped']} skipped")
-    except Exception as e:
-        print(f"[Scheduler] RQ sync failed: {e}")
-    finally:
-        db.close()
+    import time
+    for attempt in range(3):
+        db = database.SessionLocal()
+        try:
+            result = reported_questions._do_rq_sync(db)
+            print(f"[Scheduler] RQ sync: {result['inserted']} inserted, {result['skipped']} skipped")
+            return
+        except Exception as e:
+            print(f"[Scheduler] RQ sync attempt {attempt + 1}/3 failed: {e}")
+            if attempt < 2:
+                time.sleep(60)
+        finally:
+            db.close()
 
 
 # ── App lifespan ──────────────────────────────────────────────────────────────
@@ -76,7 +81,7 @@ async def lifespan(app: FastAPI):
 
         def _initial_sync():
             _sync_assessments()
-            time.sleep(15)  # wait for connection to close before opening a new one
+            time.sleep(60)  # wait for server to release connection before opening a new one
             _sync_reported_questions()
 
         threading.Thread(target=_initial_sync, daemon=True).start()
