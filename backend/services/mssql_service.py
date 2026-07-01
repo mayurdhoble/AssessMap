@@ -110,8 +110,10 @@ def fetch_assessments() -> pd.DataFrame:
     if not is_configured():
         raise RuntimeError("MSSQL not configured — DB_HOST env var is missing")
     with _get_conn() as conn:
-        df = pd.read_sql(_ASSESSMENT_SQL, conn)
-    return df
+        cursor = conn.cursor(as_dict=True)
+        cursor.execute(_ASSESSMENT_SQL)
+        rows = cursor.fetchall()
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
 def fetch_reported_questions() -> List[dict]:

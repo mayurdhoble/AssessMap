@@ -71,9 +71,10 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_sync_reported_questions, "interval", minutes=10, id="sync_rq")
         scheduler.start()
         print("[Startup] MSSQL scheduler started (10-min interval)")
-        # Run an initial sync immediately on startup
+        # Stagger initial syncs so they don't compete for the DB connection
         _sync_assessments()
-        _sync_reported_questions()
+        import threading
+        threading.Timer(30.0, _sync_reported_questions).start()
     else:
         print("[Startup] DB_HOST not set — MSSQL scheduler disabled")
 
