@@ -32,6 +32,18 @@ def sync_from_mssql(_: str = Depends(require_auth)):
         raise HTTPException(status_code=500, detail=f"Assessment sync failed: {str(e)}")
 
 
+@router.get("/data/sample")
+def data_sample(_: str = Depends(require_auth)):
+    """Return first 3 rows as raw dicts — for debugging column names and values."""
+    if not store.is_loaded():
+        return {"loaded": False, "rows": []}
+    sample = store.df.head(3).copy()
+    # Convert timestamps to strings so JSON serialises cleanly
+    for col in sample.select_dtypes(include=["datetime64[ns]", "datetime64[ns, UTC]"]).columns:
+        sample[col] = sample[col].astype(str)
+    return {"columns": list(sample.columns), "rows": sample.to_dict(orient="records")}
+
+
 @router.delete("/data")
 def clear_data():
     """Wipe all persisted data and reset in-memory state."""
