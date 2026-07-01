@@ -44,6 +44,37 @@ def data_sample(_: str = Depends(require_auth)):
     return {"columns": list(sample.columns), "rows": sample.to_dict(orient="records")}
 
 
+@router.get("/debug/mssql-schema")
+def mssql_schema(_: str = Depends(require_auth)):
+    """Return column list for all iMocha tables — temporary debug endpoint."""
+    from services import mssql_service
+    if not mssql_service.is_configured():
+        raise HTTPException(status_code=503, detail="MSSQL not configured")
+    sql = """
+    SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, ORDINAL_POSITION
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME IN (
+        'CandidateTest','TestInvitaions','CustTest','CustTestLinks',
+        'TestSettings','CustTestSections','CustTestSection_QB',
+        'QuestionBankMaster','CategoryMaster','UserMaster',
+        'CustomerMaster','QuestionIssueMaster','QuestionMasters',
+        'SectionTypeMaster','QuestionTypeMaster'
+    )
+    ORDER BY TABLE_NAME, ORDINAL_POSITION
+    """
+    with mssql_service._get_conn() as conn:
+        cursor = conn.cursor(as_dict=True)
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+    tables = {}
+    for r in rows:
+        t = r["TABLE_NAME"]
+        if t not in tables:
+            tables[t] = []
+        tables[t].append({"column": r["COLUMN_NAME"], "type": r["DATA_TYPE"]})
+    return tables
+
+
 @router.delete("/data")
 def clear_data():
     """Wipe all persisted data and reset in-memory state."""
