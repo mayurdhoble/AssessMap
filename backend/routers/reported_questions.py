@@ -13,6 +13,9 @@ from routers.auth import require_auth, require_api_key
 
 router = APIRouter(prefix="/api/v1/reported-questions", tags=["reported-questions"])
 
+# Module-level last-synced tracker (reset on server restart, which is fine)
+_rq_last_synced: Optional[datetime] = None
+
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -248,6 +251,70 @@ def list_issues(
         "page": page,
         "pages": max(1, (total + limit - 1) // limit),
         "items": [_serialize(r) for r in items],
+    }
+
+
+# ── MSSQL sync (shared helper + routes) ──────────────────────────────────────
+
+def _do_rq_sync(db: Session) -> dict:
+    """INSERT-only sync from MSSQL reported-questions table. Never overwrites existing rows."""
+    global _rq_last_synced
+    from services import mssql_service
+    rows = mssql_service.fetch_reported_questions()
+    inserted, skipped = 0, 0
+    for item in rows:
+        qid = item.get("QuestionIssueId")
+        if not qid:
+            continue
+        if db.query(ReportedQuestion).filter(ReportedQuestion.question_issue_id == qid).first():
+            skipped += 1
+            continue
+        db.add(ReportedQuestion(
+            question_issue_id=qid,
+            reported_on=item.get("ReportedOn"),
+            candidate_email=item.get("ReportedByCandidate"),
+            recruiter_email=item.get("InvitedBy"),
+            test_id=item.get("TestId"),
+            skill=item.get("Category"),
+            question_id=item.get("QuestionId"),
+            question_html=item.get("Question"),
+            test_invitation_id=item.get("TestInvitationID"),
+            problem_type=item.get("ProblemType"),
+            comment=item.get("Comment"),
+            issue_status=item.get("IssueStatus") or "New",
+        ))
+        inserted += 1
+    db.commit()
+    _rq_last_synced = datetime.utcnow()
+    return {"inserted": inserted, "skipped": skipped}
+
+
+@router.post("/sync")
+def sync_from_mssql(
+    db: Session = Depends(get_db),
+    _: str = Depends(require_auth),
+):
+    """Manually trigger a pull from MSSQL into PostgreSQL (insert-only)."""
+    from services import mssql_service
+    if not mssql_service.is_configured():
+        raise HTTPException(status_code=503, detail="MSSQL not configured — add DB_HOST env var")
+    try:
+        result = _do_rq_sync(db)
+        return {
+            "success": True,
+            **result,
+            "last_synced": _rq_last_synced.isoformat() if _rq_last_synced else None,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"RQ sync failed: {str(e)}")
+
+
+@router.get("/sync-status")
+def sync_status(_: str = Depends(require_auth)):
+    from services import mssql_service
+    return {
+        "sync_mode": mssql_service.is_configured(),
+        "last_synced": _rq_last_synced.isoformat() if _rq_last_synced else None,
     }
 
 

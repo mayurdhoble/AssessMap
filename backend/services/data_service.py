@@ -127,6 +127,37 @@ class DataStore:
             },
         }
 
+    def sync_from_df(self, df: pd.DataFrame) -> dict:
+        """Replace current dataset with a fresh DataFrame from MSSQL, then persist."""
+        if "Date" in df.columns:
+            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df["Reports Generated"] = (
+            pd.to_numeric(df["Reports Generated"], errors="coerce").fillna(0).astype(int)
+        )
+        df["AccountTypeId"] = (
+            pd.to_numeric(df["AccountTypeId"], errors="coerce")
+            .fillna(0).astype(int).astype(str)
+        )
+        for col in ["Recruiter Email", "Company Name", "QB Name", "Library",
+                    "Category", "NavigationType", "Test Name"]:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.strip()
+        df = df[df["Company Name"].notna() & (df["Company Name"] != "") & (df["Company Name"] != "nan")]
+
+        self.df = df.reset_index(drop=True)
+        self.uploaded_at = datetime.now()
+        self.filename = "MSSQL Sync"
+        self._save_to_disk()
+
+        rows = len(self.df)
+        has_date = bool("Date" in self.df.columns and self.df["Date"].notna().any())
+        return {
+            "rows": rows,
+            "filename": self.filename,
+            "synced_at": self.uploaded_at.isoformat(),
+            "has_date": has_date,
+        }
+
     def clear(self):
         """Wipe persisted files and reset in-memory state."""
         for path in (_PARQUET_FILE, _META_FILE):

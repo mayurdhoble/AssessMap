@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+
 import {
   PieChart, Pie, Cell, Legend, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
@@ -51,6 +52,21 @@ export default function ReportedQuestions() {
   const set = (key) => (e) => setDraft((p) => ({ ...p, [key]: e.target.value }))
 
   const interval = autoRefresh ? 10_000 : false
+
+  const { data: syncStatus } = useQuery({
+    queryKey: ['rq-sync-status'],
+    queryFn: () => api.get('/v1/reported-questions/sync-status').then((r) => r.data),
+    refetchInterval: interval,
+  })
+
+  const syncNow = useMutation({
+    mutationFn: () => api.post('/v1/reported-questions/sync'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['rq-list'] })
+      qc.invalidateQueries({ queryKey: ['rq-analytics'] })
+      qc.invalidateQueries({ queryKey: ['rq-sync-status'] })
+    },
+  })
 
   const { data: options } = useQuery({
     queryKey: ['rq-options'],
@@ -104,7 +120,26 @@ export default function ReportedQuestions() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-bold text-gray-800">Reported Questions</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Sync Now — only in MSSQL mode */}
+          {syncStatus?.sync_mode && (
+            <div className="flex flex-col items-end gap-0.5">
+              <button
+                onClick={() => syncNow.mutate()}
+                disabled={syncNow.isPending}
+                className="flex items-center gap-2 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+              >
+                <RefreshCw size={14} className={syncNow.isPending ? 'animate-spin' : ''} />
+                {syncNow.isPending ? 'Syncing…' : 'Sync Now'}
+              </button>
+              {syncStatus?.last_synced && (
+                <span className="text-xs text-gray-400">
+                  Last: {new Date(syncStatus.last_synced).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Auto-refresh toggle */}
           <button
             onClick={() => setAutoRefresh((v) => !v)}

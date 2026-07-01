@@ -1,5 +1,6 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from services.data_service import store
+from routers.auth import require_auth
 
 router = APIRouter(prefix="/api", tags=["upload"])
 
@@ -17,6 +18,20 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Failed to parse file: {str(e)}")
 
 
+@router.post("/data/sync")
+def sync_from_mssql(_: str = Depends(require_auth)):
+    """Pull fresh assessment data from MSSQL and replace the in-memory dataset."""
+    from services import mssql_service
+    if not mssql_service.is_configured():
+        raise HTTPException(status_code=503, detail="MSSQL not configured — add DB_HOST env var")
+    try:
+        df = mssql_service.fetch_assessments()
+        result = store.sync_from_df(df)
+        return {"success": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Assessment sync failed: {str(e)}")
+
+
 @router.delete("/data")
 def clear_data():
     """Wipe all persisted data and reset in-memory state."""
@@ -26,11 +41,14 @@ def clear_data():
 
 @router.get("/data/info")
 def data_info():
+    from services import mssql_service
+    sync_mode = mssql_service.is_configured()
     if not store.is_loaded():
-        return {"loaded": False}
+        return {"loaded": False, "sync_mode": sync_mode}
     has_date = bool("Date" in store.df.columns and store.df["Date"].notna().any())
     return {
         "loaded": True,
+        "sync_mode": sync_mode,
         "filename": store.filename,
         "rows": len(store.df),
         "uploaded_at": store.uploaded_at.isoformat(),

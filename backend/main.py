@@ -13,6 +13,38 @@ import models  # noqa: F401 — registers ORM models with Base.metadata
 load_dotenv()
 
 
+# ── Scheduler jobs ────────────────────────────────────────────────────────────
+
+def _sync_assessments():
+    from services import mssql_service
+    if not mssql_service.is_configured():
+        return
+    try:
+        df = mssql_service.fetch_assessments()
+        result = store.sync_from_df(df)
+        print(f"[Scheduler] Assessment sync: {result['rows']:,} rows")
+    except Exception as e:
+        print(f"[Scheduler] Assessment sync failed: {e}")
+
+
+def _sync_reported_questions():
+    if not database.SessionLocal:
+        return
+    from services import mssql_service
+    if not mssql_service.is_configured():
+        return
+    db = database.SessionLocal()
+    try:
+        result = reported_questions._do_rq_sync(db)
+        print(f"[Scheduler] RQ sync: {result['inserted']} inserted, {result['skipped']} skipped")
+    except Exception as e:
+        print(f"[Scheduler] RQ sync failed: {e}")
+    finally:
+        db.close()
+
+
+# ── App lifespan ──────────────────────────────────────────────────────────────
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create PostgreSQL tables if they don't exist
@@ -27,9 +59,32 @@ async def lifespan(app: FastAPI):
     if store.is_loaded():
         print(f"[Startup] Loaded {len(store.df):,} rows from disk ({store.filename})")
     else:
-        print("[Startup] No persisted dataset found — waiting for first upload")
+        print("[Startup] No persisted dataset found — waiting for first sync/upload")
+
+    # Start background scheduler if MSSQL is configured
+    from services import mssql_service
+    scheduler = None
+    if mssql_service.is_configured():
+        from apscheduler.schedulers.background import BackgroundScheduler
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(_sync_assessments, "interval", minutes=10, id="sync_assessments")
+        scheduler.add_job(_sync_reported_questions, "interval", minutes=10, id="sync_rq")
+        scheduler.start()
+        print("[Startup] MSSQL scheduler started (10-min interval)")
+        # Run an initial sync immediately on startup
+        _sync_assessments()
+        _sync_reported_questions()
+    else:
+        print("[Startup] DB_HOST not set — MSSQL scheduler disabled")
+
     yield
 
+    if scheduler and scheduler.running:
+        scheduler.shutdown(wait=False)
+        print("[Shutdown] Scheduler stopped")
+
+
+# ── FastAPI app ───────────────────────────────────────────────────────────────
 
 app = FastAPI(title="iMocha Analytics Dashboard", version="1.0.0", lifespan=lifespan)
 

@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   LayoutDashboard, TrendingUp, BarChart2, BookOpen,
   Building2, Tag, Upload, Menu, ChevronLeft,
-  Trash2, AlertTriangle, Flag, LogOut,
+  Trash2, AlertTriangle, Flag, LogOut, RefreshCw,
 } from 'lucide-react'
 import api from '../api/client'
 import UploadModal from './UploadModal'
@@ -24,6 +24,7 @@ export default function Layout() {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [clearConfirm, setClearConfirm] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -43,6 +44,19 @@ export default function Layout() {
     } finally {
       setClearing(false)
       setClearConfirm(false)
+    }
+  }
+
+  const handleSyncNow = async () => {
+    setSyncing(true)
+    try {
+      await api.post('/data/sync')
+      qc.invalidateQueries()
+      refetch()
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Sync failed')
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -114,17 +128,51 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* Upload + Clear + Logout */}
+        {/* Upload / Sync + Clear + Logout */}
         <div className="p-2 border-t border-gray-100 space-y-1.5">
-          <button
-            onClick={() => setUploadOpen(true)}
-            title={collapsed ? (info?.loaded ? 'Add More Data' : 'Upload Data') : undefined}
-            className={`w-full flex items-center gap-2 px-2.5 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600
-              text-white text-sm font-medium transition-colors ${collapsed ? 'justify-center' : ''}`}
-          >
-            <Upload size={16} className="shrink-0" />
-            {!collapsed && (info?.loaded ? 'Add More Data' : 'Upload Data')}
-          </button>
+          {info?.sync_mode ? (
+            /* ── MSSQL sync mode ── */
+            <>
+              <button
+                onClick={handleSyncNow}
+                disabled={syncing}
+                title={collapsed ? 'Sync Now' : undefined}
+                className={`w-full flex items-center gap-2 px-2.5 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600
+                  text-white text-sm font-medium transition-colors disabled:opacity-60 ${collapsed ? 'justify-center' : ''}`}
+              >
+                <RefreshCw size={16} className={`shrink-0 ${syncing ? 'animate-spin' : ''}`} />
+                {!collapsed && (syncing ? 'Syncing…' : 'Sync Now')}
+              </button>
+              {!collapsed && info?.loaded && (
+                <p className="text-xs text-gray-400 px-1 truncate">
+                  {info.rows?.toLocaleString()} rows · auto 10 min
+                </p>
+              )}
+              {!collapsed && info?.uploaded_at && (
+                <p className="text-xs text-gray-400 px-1 truncate" title="Last synced">
+                  Last: {new Date(info.uploaded_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              )}
+            </>
+          ) : (
+            /* ── Manual upload mode ── */
+            <>
+              <button
+                onClick={() => setUploadOpen(true)}
+                title={collapsed ? (info?.loaded ? 'Add More Data' : 'Upload Data') : undefined}
+                className={`w-full flex items-center gap-2 px-2.5 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600
+                  text-white text-sm font-medium transition-colors ${collapsed ? 'justify-center' : ''}`}
+              >
+                <Upload size={16} className="shrink-0" />
+                {!collapsed && (info?.loaded ? 'Add More Data' : 'Upload Data')}
+              </button>
+              {!collapsed && info?.loaded && (
+                <p className="text-xs text-gray-400 px-1 truncate" title={info.filename}>
+                  {info.filename} · {info.rows?.toLocaleString()} rows
+                </p>
+              )}
+            </>
+          )}
 
           {info?.loaded && (
             <button
@@ -136,12 +184,6 @@ export default function Layout() {
               <Trash2 size={15} className="shrink-0" />
               {!collapsed && 'Clear All Data'}
             </button>
-          )}
-
-          {!collapsed && info?.loaded && (
-            <p className="text-xs text-gray-400 px-1 truncate" title={info.filename}>
-              {info.filename} · {info.rows?.toLocaleString()} rows
-            </p>
           )}
 
           <button
@@ -168,18 +210,40 @@ export default function Layout() {
           {!info?.loaded ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mb-4">
-                <Upload size={32} className="text-orange-500" />
+                {info?.sync_mode
+                  ? <RefreshCw size={32} className="text-orange-500" />
+                  : <Upload size={32} className="text-orange-500" />
+                }
               </div>
               <h2 className="text-xl font-semibold text-gray-700 mb-2">No data loaded</h2>
-              <p className="text-gray-400 mb-6 max-w-sm text-sm">
-                Upload a CSV or Excel file with your iMocha usage data to start exploring the analytics.
-              </p>
-              <button
-                onClick={() => setUploadOpen(true)}
-                className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors"
-              >
-                Upload Data File
-              </button>
+              {info?.sync_mode ? (
+                <>
+                  <p className="text-gray-400 mb-6 max-w-sm text-sm">
+                    Data syncs automatically every 10 minutes from MSSQL.<br />
+                    Click below to trigger an immediate sync.
+                  </p>
+                  <button
+                    onClick={handleSyncNow}
+                    disabled={syncing}
+                    className="flex items-center gap-2 px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors disabled:opacity-60"
+                  >
+                    <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
+                    {syncing ? 'Syncing…' : 'Sync Now'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-gray-400 mb-6 max-w-sm text-sm">
+                    Upload a CSV or Excel file with your iMocha usage data to start exploring the analytics.
+                  </p>
+                  <button
+                    onClick={() => setUploadOpen(true)}
+                    className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors"
+                  >
+                    Upload Data File
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <Outlet />
