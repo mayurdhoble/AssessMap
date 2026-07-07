@@ -50,7 +50,7 @@ export default function Layout() {
   const handleSyncNow = async () => {
     setSyncing(true)
     try {
-      await api.post('/data/sync')
+      await api.post('/data/sync', {}, { timeout: 300_000 })
       qc.invalidateQueries()
       refetch()
     } catch (e) {
