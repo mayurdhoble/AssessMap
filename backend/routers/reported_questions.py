@@ -22,26 +22,34 @@ def _fetch_in_background():
     """Fetch RQ data from MSSQL in a background thread — never blocks HTTP requests."""
     global _rq_cache, _rq_last_synced, _rq_last_error, _rq_fetching
     from services import mssql_service
-    print("[RQ] Background fetch started...")
+    print("[RQ] ========== Background fetch STARTING ==========")
     try:
+        print("[RQ] Calling mssql_service.fetch_reported_questions()...")
         rows = mssql_service.fetch_reported_questions()
+        print(f"[RQ] Query returned {len(rows)} rows — writing to cache...")
         _rq_cache = rows
         _rq_last_synced = datetime.utcnow()
         _rq_last_error = None
-        print(f"[RQ] Background fetch complete: {len(rows)} rows")
+        print(f"[RQ] ========== Background fetch COMPLETE: {len(rows)} rows ==========")
     except Exception as e:
+        import traceback
         _rq_last_error = str(e)
-        print(f"[RQ] Background fetch failed: {e}")
+        print(f"[RQ] ========== Background fetch FAILED ==========")
+        print(f"[RQ] Error: {e}")
+        print(f"[RQ] Traceback:\n{traceback.format_exc()}")
     finally:
         _rq_fetching = False
+        print(f"[RQ] _rq_fetching reset to False")
 
 
 def _trigger_fetch():
     """Start a background fetch if one is not already running."""
     global _rq_fetching
     if _rq_fetching:
+        print("[RQ] Fetch already in progress — skipping duplicate trigger")
         return False
     _rq_fetching = True
+    print("[RQ] Starting background thread for fetch...")
     threading.Thread(target=_fetch_in_background, daemon=True).start()
     return True
 
@@ -50,6 +58,7 @@ def _get_rq_data() -> List[dict]:
     """Return cached data immediately. Triggers a background refresh if stale."""
     from services import mssql_service
     if not mssql_service.is_configured():
+        print("[RQ] MSSQL not configured — skipping")
         return []
     now = datetime.utcnow()
     is_stale = (
@@ -57,7 +66,8 @@ def _get_rq_data() -> List[dict]:
         or _rq_last_synced is None
         or (now - _rq_last_synced).total_seconds() > _CACHE_TTL
     )
-    if is_stale:
+    if is_stale and not _rq_fetching:
+        print(f"[RQ] Cache stale (rows={len(_rq_cache) if _rq_cache else 0}, last_synced={_rq_last_synced}) — triggering fetch")
         _trigger_fetch()
     return _rq_cache or []
 
