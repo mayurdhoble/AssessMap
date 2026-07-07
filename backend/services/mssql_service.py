@@ -97,16 +97,16 @@ SELECT
     END                                        AS IssueStatus,
     qim.Comment,
     CASE WHEN qb.CustomerId = 310 THEN 'Issue from RTU QB' ELSE 'Issue from Customer QB' END AS ReportedQB
-FROM CustTest ct
-JOIN TestInvitaions        ti   ON ct.TestId           = ti.TestID
-JOIN CustTestLinks         ctl  ON ctl.TestLinkId      = ti.TestLinkId
-JOIN QuestionIssueMaster   qim  ON qim.TestInvitationId = ti.TestInvitationID
-JOIN QuestionMasters       qm   ON qm.QueId            = qim.QuestionId
-JOIN QuestionBankMaster    qb   ON qb.QBId             = qm.QBId
-JOIN CategoryMaster        cm   ON qb.CategoryId       = cm.CategoryId
-LEFT JOIN UserMaster       uctl ON uctl.UserId         = ctl.UserId
-LEFT JOIN UserMaster       uinby ON uinby.UserId       = ti.InvitedBy
-LEFT JOIN QuestionTypeMaster qtm ON qtm.QueTypeId      = qm.QueTypeId
+FROM QuestionIssueMaster   qim  WITH (NOLOCK)
+JOIN QuestionMasters       qm   WITH (NOLOCK) ON qm.QueId            = qim.QuestionId
+JOIN QuestionBankMaster    qb   WITH (NOLOCK) ON qb.QBId             = qm.QBId
+JOIN CategoryMaster        cm   WITH (NOLOCK) ON cm.CategoryId       = qb.CategoryId
+JOIN TestInvitaions        ti   WITH (NOLOCK) ON ti.TestInvitationID = qim.TestInvitationId
+JOIN CustTest              ct   WITH (NOLOCK) ON ct.TestId           = ti.TestId
+JOIN CustTestLinks         ctl  WITH (NOLOCK) ON ctl.TestLinkId      = ti.TestLinkId
+LEFT JOIN UserMaster       uctl  WITH (NOLOCK) ON uctl.UserId        = ctl.UserId
+LEFT JOIN UserMaster       uinby WITH (NOLOCK) ON uinby.UserId       = ti.InvitedBy
+LEFT JOIN QuestionTypeMaster qtm WITH (NOLOCK) ON qtm.QueTypeId      = qm.QueTypeId
 WHERE qim.CreatedOn >= '2023-01-01'
 """
 
