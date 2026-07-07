@@ -15,11 +15,15 @@ _rq_last_synced: Optional[datetime] = None
 _CACHE_TTL = 600  # seconds
 
 
+_rq_last_error: Optional[str] = None
+
+
 def _get_rq_data() -> List[dict]:
     """Return cached RQ rows, fetching from MSSQL if cache is stale."""
-    global _rq_cache, _rq_last_synced
+    global _rq_cache, _rq_last_synced, _rq_last_error
     from services import mssql_service
     if not mssql_service.is_configured():
+        print("[RQ] MSSQL not configured — DB_HOST missing")
         return []
     now = datetime.utcnow()
     if (
@@ -27,9 +31,16 @@ def _get_rq_data() -> List[dict]:
         or _rq_last_synced is None
         or (now - _rq_last_synced).total_seconds() > _CACHE_TTL
     ):
-        _rq_cache = mssql_service.fetch_reported_questions()
-        _rq_last_synced = now
-        print(f"[RQ] Fetched {len(_rq_cache)} rows from MSSQL")
+        print("[RQ] Cache stale — fetching from MSSQL...")
+        try:
+            _rq_cache = mssql_service.fetch_reported_questions()
+            _rq_last_synced = now
+            _rq_last_error = None
+            print(f"[RQ] Fetched {len(_rq_cache)} rows from MSSQL")
+        except Exception as e:
+            _rq_last_error = str(e)
+            print(f"[RQ] Fetch failed: {e}")
+            return _rq_cache or []
     return _rq_cache
 
 
@@ -130,6 +141,20 @@ def sync_status(_: str = Depends(require_auth)):
         "sync_mode": mssql_service.is_configured(),
         "last_synced": _rq_last_synced.isoformat() if _rq_last_synced else None,
         "rows": len(_rq_cache) if _rq_cache is not None else 0,
+        "last_error": _rq_last_error,
+    }
+
+
+@router.get("/debug")
+def debug_state(_: str = Depends(require_auth)):
+    """Show cache state and last error — for debugging."""
+    from services import mssql_service
+    return {
+        "mssql_configured": mssql_service.is_configured(),
+        "cache_rows": len(_rq_cache) if _rq_cache is not None else None,
+        "last_synced": _rq_last_synced.isoformat() if _rq_last_synced else None,
+        "last_error": _rq_last_error,
+        "sample": _rq_cache[:2] if _rq_cache else [],
     }
 
 
