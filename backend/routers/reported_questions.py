@@ -1,4 +1,5 @@
 import io
+import threading
 from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -12,36 +13,49 @@ router = APIRouter(prefix="/api/v1/reported-questions", tags=["reported-question
 # ── In-memory cache (refreshed from MSSQL every 10 min or on Sync Now) ────────
 _rq_cache: Optional[List[dict]] = None
 _rq_last_synced: Optional[datetime] = None
+_rq_last_error: Optional[str] = None
+_rq_lock = threading.Lock()
 _CACHE_TTL = 600  # seconds
 
 
-_rq_last_error: Optional[str] = None
+def _fetch_from_mssql():
+    """Run the MSSQL query and update cache. Only one fetch runs at a time."""
+    global _rq_cache, _rq_last_synced, _rq_last_error
+    from services import mssql_service
+    print("[RQ] Fetching from MSSQL...")
+    try:
+        rows = mssql_service.fetch_reported_questions()
+        _rq_cache = rows
+        _rq_last_synced = datetime.utcnow()
+        _rq_last_error = None
+        print(f"[RQ] Fetched {len(rows)} rows from MSSQL")
+    except Exception as e:
+        _rq_last_error = str(e)
+        print(f"[RQ] Fetch failed: {e}")
 
 
 def _get_rq_data() -> List[dict]:
-    """Return cached RQ rows, fetching from MSSQL if cache is stale."""
-    global _rq_cache, _rq_last_synced, _rq_last_error
+    """Return cached RQ rows. Only one MSSQL fetch runs at a time — others return current cache."""
     from services import mssql_service
     if not mssql_service.is_configured():
-        print("[RQ] MSSQL not configured — DB_HOST missing")
         return []
     now = datetime.utcnow()
-    if (
+    is_stale = (
         _rq_cache is None
         or _rq_last_synced is None
         or (now - _rq_last_synced).total_seconds() > _CACHE_TTL
-    ):
-        print("[RQ] Cache stale — fetching from MSSQL...")
-        try:
-            _rq_cache = mssql_service.fetch_reported_questions()
-            _rq_last_synced = now
-            _rq_last_error = None
-            print(f"[RQ] Fetched {len(_rq_cache)} rows from MSSQL")
-        except Exception as e:
-            _rq_last_error = str(e)
-            print(f"[RQ] Fetch failed: {e}")
-            return _rq_cache or []
-    return _rq_cache
+    )
+    if not is_stale:
+        return _rq_cache
+    acquired = _rq_lock.acquire(blocking=False)
+    if not acquired:
+        print("[RQ] Fetch already in progress — returning current cache")
+        return _rq_cache or []
+    try:
+        _fetch_from_mssql()
+    finally:
+        _rq_lock.release()
+    return _rq_cache or []
 
 
 def _serialize(item: dict) -> dict:
@@ -116,20 +130,18 @@ def _apply_filters(items, date_from, date_to, problem_type, skill,
 
 @router.post("/sync")
 def sync_now(_: str = Depends(require_auth)):
-    global _rq_cache, _rq_last_synced
     from services import mssql_service
     if not mssql_service.is_configured():
         raise HTTPException(status_code=503, detail="MSSQL not configured")
-    try:
-        _rq_cache = mssql_service.fetch_reported_questions()
-        _rq_last_synced = datetime.utcnow()
-        return {
-            "success": True,
-            "rows": len(_rq_cache),
-            "last_synced": _rq_last_synced.isoformat(),
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"RQ fetch failed: {str(e)}")
+    with _rq_lock:
+        _fetch_from_mssql()
+    if _rq_last_error:
+        raise HTTPException(status_code=500, detail=f"RQ fetch failed: {_rq_last_error}")
+    return {
+        "success": True,
+        "rows": len(_rq_cache) if _rq_cache else 0,
+        "last_synced": _rq_last_synced.isoformat() if _rq_last_synced else None,
+    }
 
 
 # ── Sync status ───────────────────────────────────────────────────────────────
