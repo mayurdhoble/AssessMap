@@ -7,6 +7,7 @@ const useFilterStore = create((set, get) => ({
   qbs: [],
   library: 'all',
   accountType: 'all',
+  sectionType: 'all',
 
   setDateFrom: (v) => set({ dateFrom: v }),
   setDateTo: (v) => set({ dateTo: v }),
@@ -14,9 +15,10 @@ const useFilterStore = create((set, get) => ({
   setQbs: (v) => set({ qbs: v }),
   setLibrary: (v) => set({ library: v }),
   setAccountType: (v) => set({ accountType: v }),
+  setSectionType: (v) => set({ sectionType: v }),
 
   reset: () =>
-    set({ dateFrom: '', dateTo: '', companies: [], qbs: [], library: 'all', accountType: 'all' }),
+    set({ dateFrom: '', dateTo: '', companies: [], qbs: [], library: 'all', accountType: 'all', sectionType: 'all' }),
 
   // Returns query param object for API calls
   getParams: () => {
@@ -28,13 +30,14 @@ const useFilterStore = create((set, get) => ({
     if (s.qbs.length) p.qbs = s.qbs.join(',')
     if (s.library !== 'all') p.library = s.library
     if (s.accountType !== 'all') p.account_type = s.accountType
+    if (s.sectionType !== 'all') p.section_type = s.sectionType
     return p
   },
 
   activeCount: () => {
     const s = get()
     return [s.dateFrom, s.dateTo, s.companies.length > 0, s.qbs.length > 0,
-      s.library !== 'all', s.accountType !== 'all'].filter(Boolean).length
+      s.library !== 'all', s.accountType !== 'all', s.sectionType !== 'all'].filter(Boolean).length
   },
 }))
 

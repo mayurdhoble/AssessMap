@@ -37,7 +37,8 @@ SELECT
         WHEN ts.TestNavigationType = 0 OR ts.TestNavigationType IS NULL THEN 'Fixed Section'
         ELSE 'Unknown'
     END                                        AS NavigationType,
-    1                                          AS [Reports Generated]
+    1                                          AS [Reports Generated],
+    stm.SectionTypeName                        AS SectionTypeName
 FROM CandidateTest ct
 JOIN TestInvitaions       ti   ON ti.TestInvitationID  = ct.TestInvitationID
 JOIN CustTestLinks        ctl  ON ctl.TestLinkId       = ti.TestLinkId

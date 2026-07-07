@@ -11,8 +11,8 @@ def _parse_list(val: Optional[str]) -> Optional[list]:
     return [v.strip() for v in val.split(",") if v.strip()]
 
 
-def _get_df(date_from, date_to, companies, qbs, library, account_type):
-    return store.get_filtered(date_from, date_to, _parse_list(companies), _parse_list(qbs), library, account_type)
+def _get_df(date_from, date_to, companies, qbs, library, account_type, section_type=None):
+    return store.get_filtered(date_from, date_to, _parse_list(companies), _parse_list(qbs), library, account_type, section_type)
 
 
 @router.get("/kpis")
@@ -23,8 +23,9 @@ def get_kpis(
     qbs: Optional[str] = Query(None),
     library: Optional[str] = None,
     account_type: Optional[str] = None,
+    section_type: Optional[str] = None,
 ):
-    df = _get_df(date_from, date_to, companies, qbs, library, account_type)
+    df = _get_df(date_from, date_to, companies, qbs, library, account_type, section_type)
     if df.empty:
         return {"total_reports": 0, "total_assessments": 0, "unique_companies": 0,
                 "unique_recruiters": 0, "active_qbs": 0, "active_tests": 0}
@@ -46,9 +47,10 @@ def top_companies(
     qbs: Optional[str] = Query(None),
     library: Optional[str] = None,
     account_type: Optional[str] = None,
+    section_type: Optional[str] = None,
     limit: int = 10,
 ):
-    df = _get_df(date_from, date_to, companies, qbs, library, account_type)
+    df = _get_df(date_from, date_to, companies, qbs, library, account_type, section_type)
     if df.empty:
         return []
     result = (
@@ -68,9 +70,10 @@ def top_qbs(
     qbs: Optional[str] = Query(None),
     library: Optional[str] = None,
     account_type: Optional[str] = None,
+    section_type: Optional[str] = None,
     limit: int = 10,
 ):
-    df = _get_df(date_from, date_to, companies, qbs, library, account_type)
+    df = _get_df(date_from, date_to, companies, qbs, library, account_type, section_type)
     if df.empty:
         return []
     result = (
@@ -89,8 +92,9 @@ def library_split(
     companies: Optional[str] = Query(None),
     library: Optional[str] = None,
     account_type: Optional[str] = None,
+    section_type: Optional[str] = None,
 ):
-    df = store.get_filtered(date_from, date_to, _parse_list(companies), None, library, account_type)
+    df = store.get_filtered(date_from, date_to, _parse_list(companies), None, library, account_type, section_type)
     if df.empty:
         return []
     result = df.groupby("Library")["Reports Generated"].sum()
@@ -104,8 +108,9 @@ def navigation_split(
     companies: Optional[str] = Query(None),
     library: Optional[str] = None,
     account_type: Optional[str] = None,
+    section_type: Optional[str] = None,
 ):
-    df = store.get_filtered(date_from, date_to, _parse_list(companies), None, library, account_type)
+    df = store.get_filtered(date_from, date_to, _parse_list(companies), None, library, account_type, section_type)
     if df.empty:
         return []
     result = df.groupby("NavigationType")["Reports Generated"].sum()

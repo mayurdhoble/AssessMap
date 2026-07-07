@@ -14,12 +14,14 @@ def monthly_trends(
     companies: Optional[str] = Query(None),
     library: Optional[str] = None,
     account_type: Optional[str] = None,
+    section_type: Optional[str] = None,
 ):
     companies_list = [c.strip() for c in companies.split(",") if c.strip()] if companies else None
     df = store.get_filtered(
         companies=companies_list,
         library=library,
         account_type=account_type,
+        section_type=section_type,
     )
 
     if df.empty or "Date" not in df.columns:

@@ -139,7 +139,7 @@ class DataStore:
             .fillna(0).astype(int).astype(str)
         )
         for col in ["Recruiter Email", "Company Name", "QB Name", "Library",
-                    "Category", "NavigationType", "Test Name"]:
+                    "Category", "NavigationType", "Test Name", "SectionTypeName"]:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip()
         df = df[df["Company Name"].notna() & (df["Company Name"] != "") & (df["Company Name"] != "nan")]
@@ -178,12 +178,13 @@ class DataStore:
         qbs: Optional[List[str]] = None,
         library: Optional[str] = None,
         account_type: Optional[str] = None,
+        section_type: Optional[str] = None,
     ) -> pd.DataFrame:
         if not self.is_loaded():
             return pd.DataFrame(
                 columns=["Recruiter Email", "Company Name", "AccountTypeId",
                          "Test Name", "QB Name", "Library", "Category",
-                         "Reports Generated", "NavigationType"]
+                         "Reports Generated", "NavigationType", "SectionTypeName"]
             )
 
         df = self.df.copy()
@@ -201,6 +202,8 @@ class DataStore:
             df = df[df["Library"] == library]
         if account_type and account_type != "all":
             df = df[df["AccountTypeId"] == str(account_type)]
+        if section_type and section_type != "all" and "SectionTypeName" in df.columns:
+            df = df[df["SectionTypeName"] == section_type]
 
         return df
 

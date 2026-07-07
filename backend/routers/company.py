@@ -12,9 +12,10 @@ def company_summary(
     date_to: Optional[str] = None,
     library: Optional[str] = None,
     account_type: Optional[str] = None,
+    section_type: Optional[str] = None,
     limit: int = 200,
 ):
-    df = store.get_filtered(date_from, date_to, None, None, library, account_type)
+    df = store.get_filtered(date_from, date_to, None, None, library, account_type, section_type)
     if df.empty:
         return []
     result = (
