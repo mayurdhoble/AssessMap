@@ -76,7 +76,9 @@ SELECT
     qb.QBName,
     qm.QueId                                   AS QuestionId,
     qm.Question,
+    qm.Author,
     cm.Category,
+    qtm.QueType,
     ti.TestInvitationID,
     CASE
         WHEN qim.IssueTypeId = 1 THEN 'Question has grammatical errors'
@@ -95,14 +97,15 @@ SELECT
     qim.Comment,
     CASE WHEN qb.CustomerId = 310 THEN 'Issue from RTU QB' ELSE 'Issue from Customer QB' END AS ReportedQB
 FROM CustTest ct
-JOIN TestInvitaions        ti   ON ct.TestId          = ti.TestID
-JOIN CustTestLinks         ctl  ON ctl.TestLinkId     = ti.TestLinkId
+JOIN TestInvitaions        ti   ON ct.TestId           = ti.TestID
+JOIN CustTestLinks         ctl  ON ctl.TestLinkId      = ti.TestLinkId
 JOIN QuestionIssueMaster   qim  ON qim.TestInvitationId = ti.TestInvitationID
-JOIN QuestionMasters       qm   ON qm.QueId           = qim.QuestionId
-JOIN QuestionBankMaster    qb   ON qb.QBId            = qm.QBId
-JOIN CategoryMaster        cm   ON qb.CategoryId      = cm.CategoryId
-LEFT JOIN UserMaster       uctl ON uctl.UserId        = ctl.UserId
-LEFT JOIN UserMaster       uinby ON uinby.UserId      = ti.InvitedBy
+JOIN QuestionMasters       qm   ON qm.QueId            = qim.QuestionId
+JOIN QuestionBankMaster    qb   ON qb.QBId             = qm.QBId
+JOIN CategoryMaster        cm   ON qb.CategoryId       = cm.CategoryId
+LEFT JOIN UserMaster       uctl ON uctl.UserId         = ctl.UserId
+LEFT JOIN UserMaster       uinby ON uinby.UserId       = ti.InvitedBy
+LEFT JOIN QuestionTypeMaster qtm ON qtm.QueTypeId      = qm.QueTypeId
 """
 
 

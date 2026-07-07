@@ -86,13 +86,6 @@ export default function ReportedQuestions() {
     refetchInterval: interval,
   })
 
-  const toggle = useMutation({
-    mutationFn: ({ id, resolved }) => api.patch(`/v1/reported-questions/${id}/status`, { resolved }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['rq-list'] })
-      qc.invalidateQueries({ queryKey: ['rq-analytics'] })
-    },
-  })
 
   const handleExport = async () => {
     const res = await api.get('/v1/reported-questions/export', {
@@ -292,19 +285,19 @@ export default function ReportedQuestions() {
                 <th className="px-4 py-3 text-left font-medium">Recruiter</th>
                 <th className="px-4 py-3 text-left font-medium">Skill</th>
                 <th className="px-4 py-3 text-left font-medium">Q. ID</th>
+                <th className="px-4 py-3 text-left font-medium">Q. Type</th>
                 <th className="px-4 py-3 text-left font-medium">Problem Type</th>
                 <th className="px-4 py-3 text-left font-medium">Comment</th>
                 <th className="px-4 py-3 text-left font-medium">Status</th>
-                <th className="px-4 py-3 text-left font-medium">Action</th>
                 <th className="px-4 py-3 text-left font-medium">Detail</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {isLoading && (
-                <tr><td colSpan={10} className="text-center py-10 text-gray-400">Loading…</td></tr>
+                <tr><td colSpan={9} className="text-center py-10 text-gray-400">Loading…</td></tr>
               )}
               {!isLoading && list?.items?.length === 0 && (
-                <tr><td colSpan={10} className="text-center py-10 text-gray-400">No issues found</td></tr>
+                <tr><td colSpan={9} className="text-center py-10 text-gray-400">No issues found</td></tr>
               )}
               {list?.items?.map((row) => (
                 <tr key={row.id} className="hover:bg-gray-50/60 transition-colors">
@@ -321,6 +314,7 @@ export default function ReportedQuestions() {
                   </td>
                   <td className="px-4 py-3 text-gray-700 max-w-[110px] truncate text-xs">{row.skill || '—'}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{row.question_id || '—'}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{row.que_type || '—'}</td>
                   <td className="px-4 py-3">
                     <span className="inline-block bg-orange-50 text-orange-700 text-xs px-2 py-0.5 rounded-full max-w-[150px] truncate" title={row.problem_type}>
                       {row.problem_type || '—'}
@@ -330,23 +324,12 @@ export default function ReportedQuestions() {
                     {row.comment || '—'}
                   </td>
                   <td className="px-4 py-3">
-                    {row.resolved
+                    {row.issue_status === 'Resolved'
                       ? <span className="inline-flex items-center gap-1 bg-green-50 text-green-700 text-xs px-2 py-0.5 rounded-full">✓ Resolved</span>
+                      : row.issue_status === 'Inprogress'
+                      ? <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full">↻ Inprogress</span>
                       : <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-xs px-2 py-0.5 rounded-full">○ Pending</span>
                     }
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => toggle.mutate({ id: row.id, resolved: !row.resolved })}
-                      disabled={toggle.isPending}
-                      className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 ${
-                        row.resolved
-                          ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                          : 'bg-green-100 text-green-700 hover:bg-green-200'
-                      }`}
-                    >
-                      {row.resolved ? 'Reopen' : 'Resolve'}
-                    </button>
                   </td>
                   <td className="px-4 py-3">
                     <button

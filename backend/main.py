@@ -27,26 +27,6 @@ def _sync_assessments():
         print(f"[Scheduler] Assessment sync failed: {e}")
 
 
-def _sync_reported_questions():
-    if not database.SessionLocal:
-        return
-    from services import mssql_service
-    if not mssql_service.is_configured():
-        return
-    import time
-    for attempt in range(3):
-        db = database.SessionLocal()
-        try:
-            result = reported_questions._do_rq_sync(db)
-            print(f"[Scheduler] RQ sync: {result['inserted']} inserted, {result['skipped']} skipped")
-            return
-        except Exception as e:
-            print(f"[Scheduler] RQ sync attempt {attempt + 1}/3 failed: {e}")
-            if attempt < 2:
-                time.sleep(60)
-        finally:
-            db.close()
-
 
 # ── App lifespan ──────────────────────────────────────────────────────────────
 
@@ -73,18 +53,11 @@ async def lifespan(app: FastAPI):
         from apscheduler.schedulers.background import BackgroundScheduler
         scheduler = BackgroundScheduler()
         scheduler.add_job(_sync_assessments, "interval", minutes=10, id="sync_assessments")
-        scheduler.add_job(_sync_reported_questions, "interval", minutes=10, id="sync_rq")
         scheduler.start()
-        print("[Startup] MSSQL scheduler started (10-min interval)")
-        # Run initial syncs sequentially in a background thread (non-blocking)
-        import threading, time
-
-        def _initial_sync():
-            _sync_assessments()
-            time.sleep(60)  # wait for server to release connection before opening a new one
-            _sync_reported_questions()
-
-        threading.Thread(target=_initial_sync, daemon=True).start()
+        print("[Startup] MSSQL scheduler started (10-min interval for assessments)")
+        # Run initial assessment sync in background thread (non-blocking)
+        import threading
+        threading.Thread(target=_sync_assessments, daemon=True).start()
     else:
         print("[Startup] DB_HOST not set — MSSQL scheduler disabled")
 
