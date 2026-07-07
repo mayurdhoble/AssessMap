@@ -44,6 +44,52 @@ def data_sample(_: str = Depends(require_auth)):
     return {"columns": list(sample.columns), "rows": sample.to_dict(orient="records")}
 
 
+@router.get("/debug/section-type")
+def section_type_debug(_: str = Depends(require_auth)):
+    """Check what SectionTypeName values exist in the DB and in the loaded dataset."""
+    from services import mssql_service
+    if not mssql_service.is_configured():
+        raise HTTPException(status_code=503, detail="MSSQL not configured")
+
+    # Check 1: what columns does CustTestSections actually have?
+    schema_sql = """
+    SELECT COLUMN_NAME, DATA_TYPE
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'CustTestSections'
+    ORDER BY ORDINAL_POSITION
+    """
+    # Check 2: distinct SectionTypeName values from the live join
+    values_sql = """
+    SELECT TOP 20
+        stm.SectionTypeName,
+        COUNT(*) AS row_count
+    FROM CustTestSections cts
+    LEFT JOIN SectionTypeMaster stm ON stm.SectionTypeId = cts.SectionTypeId
+    GROUP BY stm.SectionTypeName
+    ORDER BY row_count DESC
+    """
+    with mssql_service._get_conn() as conn:
+        cursor = conn.cursor(as_dict=True)
+        cursor.execute(schema_sql)
+        cts_columns = cursor.fetchall()
+        cursor.execute(values_sql)
+        db_values = cursor.fetchall()
+
+    # Check 3: what's in the loaded parquet?
+    in_memory = []
+    if store.is_loaded() and "SectionTypeName" in store.df.columns:
+        counts = store.df["SectionTypeName"].value_counts().head(20)
+        in_memory = [{"value": k, "count": int(v)} for k, v in counts.items()]
+    elif store.is_loaded():
+        in_memory = "SectionTypeName column NOT present in loaded dataset"
+
+    return {
+        "cust_test_sections_columns": [c["COLUMN_NAME"] for c in cts_columns],
+        "db_section_type_values": db_values,
+        "in_memory_section_type_values": in_memory,
+    }
+
+
 @router.get("/debug/mssql-schema")
 def mssql_schema(_: str = Depends(require_auth)):
     """Return column list for all iMocha tables — temporary debug endpoint."""
