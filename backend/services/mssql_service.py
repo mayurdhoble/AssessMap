@@ -107,6 +107,7 @@ JOIN CategoryMaster        cm   ON qb.CategoryId       = cm.CategoryId
 LEFT JOIN UserMaster       uctl ON uctl.UserId         = ctl.UserId
 LEFT JOIN UserMaster       uinby ON uinby.UserId       = ti.InvitedBy
 LEFT JOIN QuestionTypeMaster qtm ON qtm.QueTypeId      = qm.QueTypeId
+WHERE qim.CreatedOn >= '2023-01-01'
 """
 
 
