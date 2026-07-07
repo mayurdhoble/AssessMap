@@ -56,10 +56,16 @@ async def lifespan(app: FastAPI):
         scheduler.start()
         print("[Startup] MSSQL scheduler started (10-min interval for assessments)")
 
-        # Kick off RQ background fetch immediately on startup
+        # Kick off RQ background fetch 3 min after startup (avoids competing with assessment sync)
         from routers.reported_questions import _trigger_fetch as rq_trigger
-        print("[Startup] Triggering initial RQ background fetch...")
-        rq_trigger()
+        import threading as _threading
+        def _delayed_rq():
+            import time
+            print("[Startup] RQ fetch scheduled — waiting 180s for assessment sync to settle...")
+            time.sleep(180)
+            print("[Startup] Triggering delayed RQ background fetch...")
+            rq_trigger()
+        _threading.Thread(target=_delayed_rq, daemon=True).start()
     else:
         print("[Startup] DB_HOST not set — MSSQL scheduler disabled")
 

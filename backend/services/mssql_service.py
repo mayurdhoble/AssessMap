@@ -69,9 +69,9 @@ _REPORTED_QUESTIONS_SQL = """
 SELECT
     qim.QuestionIssueId,
     qim.CreatedOn                              AS ReportedOn,
-    ISNULL(uinby.Email, uctl.Email)            AS InvitedBy,
+    uinby.Email                                AS InvitedBy,
     ti.CandidateEmail                          AS ReportedByCandidate,
-    ct.TestId,
+    ti.TestId,
     ct.TestName,
     qb.QBId,
     qb.QBName,
@@ -98,16 +98,14 @@ SELECT
     qim.Comment,
     CASE WHEN qb.CustomerId = 310 THEN 'Issue from RTU QB' ELSE 'Issue from Customer QB' END AS ReportedQB
 FROM QuestionIssueMaster   qim  WITH (NOLOCK)
-JOIN QuestionMasters       qm   WITH (NOLOCK) ON qm.QueId            = qim.QuestionId
-JOIN QuestionBankMaster    qb   WITH (NOLOCK) ON qb.QBId             = qm.QBId
-JOIN CategoryMaster        cm   WITH (NOLOCK) ON cm.CategoryId       = qb.CategoryId
-JOIN TestInvitaions        ti   WITH (NOLOCK) ON ti.TestInvitationID = qim.TestInvitationId
-JOIN CustTest              ct   WITH (NOLOCK) ON ct.TestId           = ti.TestId
-JOIN CustTestLinks         ctl  WITH (NOLOCK) ON ctl.TestLinkId      = ti.TestLinkId
-LEFT JOIN UserMaster       uctl  WITH (NOLOCK) ON uctl.UserId        = ctl.UserId
-LEFT JOIN UserMaster       uinby WITH (NOLOCK) ON uinby.UserId       = ti.InvitedBy
-LEFT JOIN QuestionTypeMaster qtm WITH (NOLOCK) ON qtm.QueTypeId      = qm.QueTypeId
-WHERE qim.CreatedOn >= '2023-01-01'
+JOIN TestInvitaions        ti   WITH (NOLOCK) ON ti.TestInvitationID  = qim.TestInvitationId
+JOIN QuestionMasters       qm   WITH (NOLOCK) ON qm.QueId             = qim.QuestionId
+JOIN QuestionBankMaster    qb   WITH (NOLOCK) ON qb.QBId              = qm.QBId
+JOIN CategoryMaster        cm   WITH (NOLOCK) ON cm.CategoryId        = qb.CategoryId
+LEFT JOIN CustTest         ct   WITH (NOLOCK) ON ct.TestId            = ti.TestId
+LEFT JOIN UserMaster       uinby WITH (NOLOCK) ON uinby.UserId        = ti.InvitedBy
+LEFT JOIN QuestionTypeMaster qtm WITH (NOLOCK) ON qtm.QueTypeId       = qm.QueTypeId
+WHERE qim.CreatedOn >= '2024-01-01'
 """
 
 
