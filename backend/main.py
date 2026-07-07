@@ -55,9 +55,6 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_sync_assessments, "interval", minutes=10, id="sync_assessments")
         scheduler.start()
         print("[Startup] MSSQL scheduler started (10-min interval for assessments)")
-        # Run initial assessment sync in background thread (non-blocking)
-        import threading
-        threading.Thread(target=_sync_assessments, daemon=True).start()
     else:
         print("[Startup] DB_HOST not set — MSSQL scheduler disabled")
 
