@@ -202,7 +202,7 @@ class DataStore:
             df = df[df["Library"] == library]
         if account_type and account_type != "all":
             df = df[df["AccountTypeId"] == str(account_type)]
-        if section_type and section_type != "all" and "SectionTypeName" in df.columns:
+        if section_type and section_type not in ("all", "nan", "None") and "SectionTypeName" in df.columns:
             df = df[df["SectionTypeName"] == section_type]
 
         return df

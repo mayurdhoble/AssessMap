@@ -11,7 +11,7 @@ def filter_options():
     df = store.df
     section_types = []
     if "SectionTypeName" in df.columns:
-        section_types = sorted([s for s in df["SectionTypeName"].dropna().unique().tolist() if s and s != "nan"])
+        section_types = sorted([s for s in df["SectionTypeName"].dropna().unique().tolist() if s and s not in ("nan", "None", "none")])
     return {
         "companies": sorted(df["Company Name"].dropna().unique().tolist()),
         "qbs": sorted(df["QB Name"].dropna().unique().tolist()),
