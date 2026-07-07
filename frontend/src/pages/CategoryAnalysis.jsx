@@ -156,7 +156,7 @@ export default function CategoryAnalysis() {
                 className={`p-5 rounded-xl border ${i === 0 ? 'border-orange-200 bg-orange-50' : 'border-blue-200 bg-blue-50'}`}
               >
                 <div className="flex items-center justify-between mb-3">
-                  <span className="font-semibold text-gray-700">Account Type {row.account_type}</span>
+                  <span className="font-semibold text-gray-700">{row.account_type === '1' ? 'TA' : row.account_type === '2' ? 'TM' : `Type ${row.account_type}`}</span>
                   <span className={`text-3xl font-bold ${i === 0 ? 'text-orange-600' : 'text-blue-600'}`}>
                     {fmt(row.reports)}
                   </span>

@@ -69,7 +69,7 @@ export default function CompanyDrilldown() {
                           ? 'bg-green-100 text-green-700'
                           : 'bg-blue-100 text-blue-700'
                         }`}>
-                        Type {row.account_type}
+                        {row.account_type === '1' ? 'TA' : row.account_type === '2' ? 'TM' : `Type ${row.account_type}`}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-orange-600">{fmt(row.reports)}</td>

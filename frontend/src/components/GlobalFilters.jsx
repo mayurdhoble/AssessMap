@@ -208,7 +208,7 @@ export default function GlobalFilters() {
       >
         <option value="all">All Account Types</option>
         {(options?.account_types || []).map((a) => (
-          <option key={a} value={a}>Type {a}</option>
+          <option key={a} value={a}>{a === '1' ? 'TA' : a === '2' ? 'TM' : `Type ${a}`}</option>
         ))}
       </select>
 
