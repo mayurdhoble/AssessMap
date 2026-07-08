@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   LayoutDashboard, TrendingUp, BarChart2, BookOpen,
   Building2, Tag, Upload, Menu, ChevronLeft,
-  Trash2, AlertTriangle, Flag, LogOut, RefreshCw,
+  Flag, LogOut, RefreshCw,
 } from 'lucide-react'
 import api from '../api/client'
 import UploadModal from './UploadModal'
@@ -22,8 +22,6 @@ const NAV = [
 
 export default function Layout() {
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [clearConfirm, setClearConfirm] = useState(false)
-  const [clearing, setClearing] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const navigate = useNavigate()
@@ -33,19 +31,6 @@ export default function Layout() {
     queryKey: ['data-info'],
     queryFn: () => api.get('/data/info').then((r) => r.data),
   })
-
-  const handleClear = async () => {
-    setClearing(true)
-    try {
-      await api.delete('/data')
-      qc.invalidateQueries()
-      refetch()
-      navigate('/overview')
-    } finally {
-      setClearing(false)
-      setClearConfirm(false)
-    }
-  }
 
   const handleSyncNow = async () => {
     setSyncing(true)
@@ -174,18 +159,6 @@ export default function Layout() {
             </>
           )}
 
-          {info?.loaded && (
-            <button
-              onClick={() => setClearConfirm(true)}
-              title={collapsed ? 'Clear All Data' : undefined}
-              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-red-500 hover:bg-red-50
-                text-sm font-medium transition-colors ${collapsed ? 'justify-center' : ''}`}
-            >
-              <Trash2 size={15} className="shrink-0" />
-              {!collapsed && 'Clear All Data'}
-            </button>
-          )}
-
           <button
             onClick={handleLogout}
             title={collapsed ? 'Sign Out' : undefined}
@@ -258,31 +231,7 @@ export default function Layout() {
         />
       )}
 
-      {clearConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center shrink-0">
-                <AlertTriangle size={20} className="text-red-500" />
-              </div>
-              <h2 className="font-semibold text-gray-800">Clear All Data?</h2>
-            </div>
-            <p className="text-sm text-gray-500 mb-5">
-              This will permanently delete all uploaded data from the server. This action cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button onClick={() => setClearConfirm(false)} disabled={clearing}
-                className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors">
-                Cancel
-              </button>
-              <button onClick={handleClear} disabled={clearing}
-                className="flex-1 px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors disabled:opacity-60">
-                {clearing ? 'Clearing…' : 'Yes, Clear All'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   )
 }
