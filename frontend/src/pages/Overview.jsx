@@ -1,9 +1,10 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { FileText, Building2, Users, BookOpen, ClipboardList, LayoutGrid } from 'lucide-react'
+import { FileText, Building2, Users, BookOpen, ClipboardList, LayoutGrid, Download } from 'lucide-react'
 import KPICard from '../components/KPICard'
 import useFilterStore from '../store/filterStore'
 import api from '../api/client'
@@ -36,6 +37,28 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 export default function Overview() {
   const params = useFilterStore((s) => s.getParams())
+  const [exporting, setExporting] = useState(false)
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const res = await api.get('/export/assessments', {
+        params,
+        responseType: 'blob',
+        timeout: 300_000,
+      })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `assessments_${new Date().toISOString().slice(0, 10)}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      alert('Export failed — try applying filters to reduce the row count first.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const { data: kpis }         = useQuery({ queryKey: ['kpis', params],         queryFn: () => api.get('/overview/kpis',           { params }).then(r => r.data) })
   const { data: topCompanies } = useQuery({ queryKey: ['top-co', params],        queryFn: () => api.get('/overview/top-companies',  { params: { ...params, limit: 10 } }).then(r => r.data) })
@@ -47,7 +70,17 @@ export default function Overview() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-gray-800">Overview</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-gray-800">Overview</h1>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+        >
+          <Download size={15} />
+          {exporting ? 'Exporting…' : 'Export to Excel'}
+        </button>
+      </div>
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">

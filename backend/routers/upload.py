@@ -1,4 +1,9 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+import io
+from datetime import datetime
+from typing import Optional
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Query
+from fastapi.responses import StreamingResponse
+import pandas as pd
 from services.data_service import store
 from routers.auth import require_auth
 
@@ -119,6 +124,47 @@ def mssql_schema(_: str = Depends(require_auth)):
             tables[t] = []
         tables[t].append({"column": r["COLUMN_NAME"], "type": r["DATA_TYPE"]})
     return tables
+
+
+@router.get("/export/assessments")
+def export_assessments(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    companies: Optional[str] = Query(None),
+    qbs: Optional[str] = Query(None),
+    library: Optional[str] = None,
+    account_type: Optional[str] = None,
+    section_type: Optional[str] = None,
+    _: str = Depends(require_auth),
+):
+    """Export filtered assessment rows as Excel."""
+    def _parse(val):
+        return [v.strip() for v in val.split(",") if v.strip()] if val else None
+
+    df = store.get_filtered(
+        date_from, date_to,
+        _parse(companies), _parse(qbs),
+        library, account_type, section_type,
+    )
+
+    if df.empty:
+        raise HTTPException(status_code=404, detail="No data matching the current filters")
+
+    # Convert Date column to string for Excel compatibility
+    export_df = df.copy()
+    if "Date" in export_df.columns:
+        export_df["Date"] = export_df["Date"].astype(str)
+
+    buf = io.BytesIO()
+    export_df.to_excel(buf, index=False)
+    buf.seek(0)
+
+    filename = f"assessments_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.delete("/data")
