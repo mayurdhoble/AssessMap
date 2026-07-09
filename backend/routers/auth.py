@@ -15,10 +15,26 @@ class LoginRequest(BaseModel):
     password: str
 
 
+def _get_users() -> dict:
+    """Return {username: password} from env vars USER1..USER4 + ADMIN fallback."""
+    users = {}
+    for i in range(1, 5):
+        u = os.getenv(f"USER{i}_USERNAME", "")
+        p = os.getenv(f"USER{i}_PASSWORD", "")
+        if u and p:
+            users[u] = p
+    # Always include ADMIN_USERNAME/PASSWORD as fallback
+    admin_u = os.getenv("ADMIN_USERNAME", "admin")
+    admin_p = os.getenv("ADMIN_PASSWORD", "password")
+    if admin_u not in users:
+        users[admin_u] = admin_p
+    return users
+
+
 @router.post("/login")
 def login(req: LoginRequest):
-    if req.username != os.getenv("ADMIN_USERNAME", "admin") or \
-       req.password != os.getenv("ADMIN_PASSWORD", "password"):
+    users = _get_users()
+    if users.get(req.username) != req.password:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = jwt.encode(
         {"sub": req.username, "exp": datetime.utcnow() + timedelta(hours=24)},

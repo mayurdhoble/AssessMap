@@ -5,7 +5,7 @@ import {
   PieChart, Pie, Cell, Legend, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
 } from 'recharts'
-import { Download, CheckCircle, Clock, AlertCircle, BarChart2, RefreshCw, X, ExternalLink, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { Download, CheckCircle, Clock, AlertCircle, BarChart2, RefreshCw, X, ExternalLink, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UserCheck } from 'lucide-react'
 import KPICard from '../components/KPICard'
 import api from '../api/client'
 
@@ -48,6 +48,7 @@ export default function ReportedQuestions() {
   const [limit, setLimit] = useState(50)
   const [autoRefresh, setAutoRefresh] = useState(false)
   const [detail, setDetail] = useState(null)
+  const currentUser = localStorage.getItem('auth_user') || ''
 
   const set = (key) => (e) => setDraft((p) => ({ ...p, [key]: e.target.value }))
 
@@ -66,6 +67,16 @@ export default function ReportedQuestions() {
       qc.invalidateQueries({ queryKey: ['rq-analytics'] })
       qc.invalidateQueries({ queryKey: ['rq-sync-status'] })
     },
+  })
+
+  const markResolved = useMutation({
+    mutationFn: (qid) => api.post(`/v1/reported-questions/${qid}/mark`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rq-list'] }),
+  })
+
+  const unmarkResolved = useMutation({
+    mutationFn: (qid) => api.delete(`/v1/reported-questions/${qid}/mark`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rq-list'] }),
   })
 
   const { data: options } = useQuery({
@@ -155,7 +166,7 @@ export default function ReportedQuestions() {
             className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
             <Download size={15} />
-            Export to Excel
+            Export My Resolved
           </button>
         </div>
       </div>
@@ -289,15 +300,17 @@ export default function ReportedQuestions() {
                 <th className="px-4 py-3 text-left font-medium">Problem Type</th>
                 <th className="px-4 py-3 text-left font-medium">Comment</th>
                 <th className="px-4 py-3 text-left font-medium">Status</th>
+                <th className="px-4 py-3 text-left font-medium">Resolved By</th>
+                <th className="px-4 py-3 text-left font-medium">Action</th>
                 <th className="px-4 py-3 text-left font-medium">Detail</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {isLoading && (
-                <tr><td colSpan={9} className="text-center py-10 text-gray-400">Loading…</td></tr>
+                <tr><td colSpan={11} className="text-center py-10 text-gray-400">Loading…</td></tr>
               )}
               {!isLoading && list?.items?.length === 0 && (
-                <tr><td colSpan={9} className="text-center py-10 text-gray-400">No issues found</td></tr>
+                <tr><td colSpan={11} className="text-center py-10 text-gray-400">No issues found</td></tr>
               )}
               {list?.items?.map((row) => (
                 <tr key={row.id} className="hover:bg-gray-50/60 transition-colors">
@@ -330,6 +343,34 @@ export default function ReportedQuestions() {
                       ? <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full">↻ Inprogress</span>
                       : <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-xs px-2 py-0.5 rounded-full">○ Pending</span>
                     }
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                    {row.marked_by
+                      ? <span className="inline-flex items-center gap-1 text-green-700 font-medium">
+                          <UserCheck size={12} /> {row.marked_by}
+                        </span>
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.marked_by === currentUser ? (
+                      <button
+                        onClick={() => unmarkResolved.mutate(row.id)}
+                        disabled={unmarkResolved.isPending}
+                        className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-500 hover:bg-red-50 hover:border-red-300 hover:text-red-600 transition-colors disabled:opacity-50"
+                      >
+                        Unmark
+                      </button>
+                    ) : row.marked_by ? (
+                      <span className="text-xs text-gray-400 italic">Marked</span>
+                    ) : (
+                      <button
+                        onClick={() => markResolved.mutate(row.id)}
+                        disabled={markResolved.isPending}
+                        className="text-xs px-2 py-1 rounded border border-green-300 text-green-700 hover:bg-green-50 transition-colors disabled:opacity-50"
+                      >
+                        Mark as Resolved
+                      </button>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <button

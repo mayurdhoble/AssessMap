@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 import pandas as pd
 
 from routers.auth import require_auth
+import database
 
 router = APIRouter(prefix="/api/v1/reported-questions", tags=["reported-questions"])
 
@@ -185,6 +186,57 @@ def debug_state(_: str = Depends(require_auth)):
     }
 
 
+# ── RQ Actions (mark/unmark as resolved — stored in our PostgreSQL) ───────────
+
+def _load_actions() -> dict:
+    """Return {question_issue_id: {by, at}} from PostgreSQL."""
+    if not database.SessionLocal:
+        return {}
+    from models import RQAction
+    db = database.SessionLocal()
+    try:
+        rows = db.query(RQAction).all()
+        return {r.question_issue_id: {"by": r.actioned_by, "at": r.actioned_at} for r in rows}
+    finally:
+        db.close()
+
+
+@router.post("/{qid}/mark")
+def mark_resolved(qid: int, username: str = Depends(require_auth)):
+    if not database.SessionLocal:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    from models import RQAction
+    db = database.SessionLocal()
+    try:
+        existing = db.query(RQAction).filter(RQAction.question_issue_id == qid).first()
+        if existing:
+            raise HTTPException(status_code=409, detail=f"Already marked by {existing.actioned_by}")
+        db.add(RQAction(question_issue_id=qid, actioned_by=username, actioned_at=datetime.utcnow()))
+        db.commit()
+        return {"success": True, "marked_by": username}
+    finally:
+        db.close()
+
+
+@router.delete("/{qid}/mark")
+def unmark_resolved(qid: int, username: str = Depends(require_auth)):
+    if not database.SessionLocal:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    from models import RQAction
+    db = database.SessionLocal()
+    try:
+        existing = db.query(RQAction).filter(RQAction.question_issue_id == qid).first()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Not marked")
+        if existing.actioned_by != username:
+            raise HTTPException(status_code=403, detail="Cannot unmark another user's action")
+        db.delete(existing)
+        db.commit()
+        return {"success": True}
+    finally:
+        db.close()
+
+
 # ── Filter options ────────────────────────────────────────────────────────────
 
 @router.get("/filter-options")
@@ -255,12 +307,18 @@ def export_excel(
     recruiter_email: Optional[str] = None,
     question_id: Optional[str] = None,
     status: Optional[str] = "all",
-    _: str = Depends(require_auth),
+    username: str = Depends(require_auth),
 ):
-    items = _apply_filters(
+    # Only export rows this user has personally marked as resolved
+    actions = _load_actions()
+    my_ids = {qid for qid, a in actions.items() if a["by"] == username}
+
+    all_items = _apply_filters(
         _get_rq_data(), date_from, date_to, problem_type,
         skill, candidate_email, recruiter_email, question_id, status,
     )
+    items = [i for i in all_items if i.get("QuestionIssueId") in my_ids]
+
     rows = [{
         "Issue ID": i.get("QuestionIssueId"),
         "Reported On": i["ReportedOn"].strftime("%d-%b-%Y %I:%M %p") if isinstance(i.get("ReportedOn"), datetime) else (i.get("ReportedOn") or ""),
@@ -276,6 +334,8 @@ def export_excel(
         "Comment": i.get("Comment") or "",
         "Status": i.get("IssueStatus") or "",
         "Reported QB": i.get("ReportedQB") or "",
+        "Resolved By": username,
+        "Resolved At": actions[i.get("QuestionIssueId")]["at"].strftime("%d-%b-%Y %I:%M %p") if actions.get(i.get("QuestionIssueId"), {}).get("at") else "",
     } for i in items]
 
     buf = io.BytesIO()
@@ -284,7 +344,7 @@ def export_excel(
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=reported_questions_{datetime.utcnow().strftime('%Y%m%d')}.xlsx"},
+        headers={"Content-Disposition": f"attachment; filename=my_resolved_rq_{datetime.utcnow().strftime('%Y%m%d')}.xlsx"},
     )
 
 
@@ -311,9 +371,21 @@ def list_issues(
     filtered.sort(key=lambda x: x.get("ReportedOn") or datetime.min, reverse=True)
     total = len(filtered)
     start = (page - 1) * limit
+    page_items = filtered[start: start + limit]
+
+    actions = _load_actions()
+
+    def _serialize_with_action(item):
+        s = _serialize(item)
+        qid = item.get("QuestionIssueId")
+        action = actions.get(qid)
+        s["marked_by"] = action["by"] if action else None
+        s["marked_at"] = action["at"].isoformat() if action and action["at"] else None
+        return s
+
     return {
         "total": total,
         "page": page,
         "pages": max(1, (total + limit - 1) // limit),
-        "items": [_serialize(i) for i in filtered[start: start + limit]],
+        "items": [_serialize_with_action(i) for i in page_items],
     }

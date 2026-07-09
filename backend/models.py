@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, UniqueConstraint
 from database import Base
 
 
@@ -24,3 +24,13 @@ class ReportedQuestion(Base):
     resolved_at = Column(DateTime, nullable=True)
     resolved_by = Column(String, nullable=True)
     received_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RQAction(Base):
+    """Tracks which dashboard user marked a reported question as resolved."""
+    __tablename__ = "rq_actions"
+
+    id = Column(Integer, primary_key=True)
+    question_issue_id = Column(Integer, nullable=False, unique=True, index=True)
+    actioned_by = Column(String, nullable=False)
+    actioned_at = Column(DateTime, default=datetime.utcnow)
