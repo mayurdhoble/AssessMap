@@ -178,7 +178,7 @@ class DataStore:
         qbs: Optional[List[str]] = None,
         library: Optional[str] = None,
         account_type: Optional[str] = None,
-        section_type: Optional[str] = None,
+        section_types: Optional[List[str]] = None,
     ) -> pd.DataFrame:
         if not self.is_loaded():
             return pd.DataFrame(
@@ -202,8 +202,10 @@ class DataStore:
             df = df[df["Library"] == library]
         if account_type and account_type != "all":
             df = df[df["AccountTypeId"] == str(account_type)]
-        if section_type and section_type not in ("all", "nan", "None") and "SectionTypeName" in df.columns:
-            df = df[df["SectionTypeName"] == section_type]
+        if section_types and "SectionTypeName" in df.columns:
+            valid = [s for s in section_types if s and s not in ("all", "nan", "None")]
+            if valid:
+                df = df[df["SectionTypeName"].isin(valid)]
 
         return df
 

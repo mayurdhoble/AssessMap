@@ -134,7 +134,7 @@ def export_assessments(
     qbs: Optional[str] = Query(None),
     library: Optional[str] = None,
     account_type: Optional[str] = None,
-    section_type: Optional[str] = None,
+    section_types: Optional[str] = None,
     _: str = Depends(require_auth),
 ):
     """Export filtered assessment rows as Excel."""
@@ -144,7 +144,7 @@ def export_assessments(
     df = store.get_filtered(
         date_from, date_to,
         _parse(companies), _parse(qbs),
-        library, account_type, section_type,
+        library, account_type, _parse(section_types),
     )
 
     if df.empty:

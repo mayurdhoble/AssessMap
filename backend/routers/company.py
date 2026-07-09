@@ -12,10 +12,10 @@ def company_summary(
     date_to: Optional[str] = None,
     library: Optional[str] = None,
     account_type: Optional[str] = None,
-    section_type: Optional[str] = None,
+    section_types: Optional[str] = None,
     limit: int = 200,
 ):
-    df = store.get_filtered(date_from, date_to, None, None, library, account_type, section_type)
+    df = store.get_filtered(date_from, date_to, None, None, library, account_type, [s.strip() for s in section_types.split(",") if s.strip()] if section_types else None)
     if df.empty:
         return []
     result = (

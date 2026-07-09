@@ -18,9 +18,9 @@ def category_breakdown(
     companies: Optional[str] = Query(None),
     library: Optional[str] = None,
     account_type: Optional[str] = None,
-    section_type: Optional[str] = None,
+    section_types: Optional[str] = None,
 ):
-    df = store.get_filtered(date_from, date_to, _parse_list(companies), None, library, account_type, section_type)
+    df = store.get_filtered(date_from, date_to, _parse_list(companies), None, library, account_type, _parse_list(section_types))
     if df.empty:
         return []
     result = (
@@ -46,11 +46,11 @@ def category_qbs(
     companies: Optional[str] = Query(None),
     library: Optional[str] = None,
     account_type: Optional[str] = None,
-    section_type: Optional[str] = None,
+    section_types: Optional[str] = None,
 ):
     from urllib.parse import unquote
     category_name = unquote(category_name)
-    df = store.get_filtered(date_from, date_to, _parse_list(companies), None, library, account_type, section_type)
+    df = store.get_filtered(date_from, date_to, _parse_list(companies), None, library, account_type, _parse_list(section_types))
     if df.empty:
         return []
     df = df[df["Category"] == category_name]
@@ -77,9 +77,9 @@ def account_type_comparison(
     date_to: Optional[str] = None,
     companies: Optional[str] = Query(None),
     library: Optional[str] = None,
-    section_type: Optional[str] = None,
+    section_types: Optional[str] = None,
 ):
-    df = store.get_filtered(date_from, date_to, _parse_list(companies), None, library, None, section_type)
+    df = store.get_filtered(date_from, date_to, _parse_list(companies), None, library, None, _parse_list(section_types))
     if df.empty:
         return []
     result = (

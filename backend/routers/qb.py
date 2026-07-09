@@ -18,10 +18,10 @@ def qb_summary(
     companies: Optional[str] = Query(None),
     library: Optional[str] = None,
     account_type: Optional[str] = None,
-    section_type: Optional[str] = None,
+    section_types: Optional[str] = None,
     limit: int = 100,
 ):
-    df = store.get_filtered(date_from, date_to, _parse_list(companies), None, library, account_type, section_type)
+    df = store.get_filtered(date_from, date_to, _parse_list(companies), None, library, account_type, _parse_list(section_types))
     if df.empty:
         return []
     result = (

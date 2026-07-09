@@ -213,17 +213,12 @@ export default function GlobalFilters() {
       </select>
 
       {(options?.section_types || []).length > 0 && (
-        <select
-          value={store.sectionType}
-          onChange={(e) => store.setSectionType(e.target.value)}
-          className={`px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:border-orange-300 transition-colors
-            ${store.sectionType !== 'all' ? 'border-orange-300 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-600'}`}
-        >
-          <option value="all">All Section Types</option>
-          {(options.section_types).map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
+        <MultiSelect
+          options={options.section_types}
+          value={store.sectionTypes}
+          onChange={store.setSectionTypes}
+          placeholder="Section Types"
+        />
       )}
 
       {count > 0 && (
