@@ -26,14 +26,20 @@ async def upload_file(file: UploadFile = File(...)):
 @router.post("/data/sync")
 def sync_from_mssql(_: str = Depends(require_auth)):
     """Pull fresh assessment data from MSSQL and replace the in-memory dataset."""
+    import traceback
+    import os
     from services import mssql_service
     if not mssql_service.is_configured():
         raise HTTPException(status_code=503, detail="MSSQL not configured — add DB_HOST env var")
+    print(f"[Sync] Attempting MSSQL connection: host={os.getenv('DB_HOST')} port={os.getenv('DB_PORT')} db={os.getenv('DB_NAME')} user={os.getenv('DB_USER')}")
     try:
         df = mssql_service.fetch_assessments()
         result = store.sync_from_df(df)
+        print(f"[Sync] SUCCESS — {result.get('rows')} rows loaded")
         return {"success": True, **result}
     except Exception as e:
+        print(f"[Sync] FAILED — {e}")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Assessment sync failed: {str(e)}")
 
 
