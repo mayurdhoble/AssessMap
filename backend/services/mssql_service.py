@@ -69,18 +69,14 @@ _REPORTED_QUESTIONS_SQL = """
 SELECT
     qim.QuestionIssueId,
     qim.CreatedOn                              AS ReportedOn,
-    uinby.Email                                AS InvitedBy,
-    ti.CandidateEmail                          AS ReportedByCandidate,
-    ti.TestId,
-    ct.TestName,
-    qb.QBId,
-    qb.QBName,
-    qm.QueId                                   AS QuestionId,
+    qim.TestInvitationId                       AS TestInvitationID,
+    qim.QuestionId,
     qm.Question,
     qm.Author,
+    qb.QBId,
+    qb.QBName,
     cm.Category,
     qtm.QueType,
-    ti.TestInvitationID,
     CASE
         WHEN qim.IssueTypeId = 1 THEN 'Question has grammatical errors'
         WHEN qim.IssueTypeId = 2 THEN 'Spelling mistakes in the question'
@@ -98,13 +94,10 @@ SELECT
     qim.Comment,
     CASE WHEN qb.CustomerId = 310 THEN 'Issue from RTU QB' ELSE 'Issue from Customer QB' END AS ReportedQB
 FROM QuestionIssueMaster   qim  WITH (NOLOCK)
-JOIN TestInvitaions        ti   WITH (NOLOCK) ON ti.TestInvitationID  = qim.TestInvitationId
-JOIN QuestionMasters       qm   WITH (NOLOCK) ON qm.QueId             = qim.QuestionId
-JOIN QuestionBankMaster    qb   WITH (NOLOCK) ON qb.QBId              = qm.QBId
-JOIN CategoryMaster        cm   WITH (NOLOCK) ON cm.CategoryId        = qb.CategoryId
-LEFT JOIN CustTest         ct   WITH (NOLOCK) ON ct.TestId            = ti.TestId
-LEFT JOIN UserMaster       uinby WITH (NOLOCK) ON uinby.UserId        = ti.InvitedBy
-LEFT JOIN QuestionTypeMaster qtm WITH (NOLOCK) ON qtm.QueTypeId       = qm.QueTypeId
+JOIN QuestionMasters       qm   WITH (NOLOCK) ON qm.QueId   = qim.QuestionId
+JOIN QuestionBankMaster    qb   WITH (NOLOCK) ON qb.QBId    = qm.QBId
+JOIN CategoryMaster        cm   WITH (NOLOCK) ON cm.CategoryId = qb.CategoryId
+LEFT JOIN QuestionTypeMaster qtm WITH (NOLOCK) ON qtm.QueTypeId = qm.QueTypeId
 WHERE qim.CreatedOn >= '2025-01-01'
 """
 
