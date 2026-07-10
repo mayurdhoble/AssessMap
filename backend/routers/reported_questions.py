@@ -94,7 +94,7 @@ def _serialize(item: dict) -> dict:
         "id": item.get("QuestionIssueId"),
         "question_issue_id": item.get("QuestionIssueId"),
         "reported_on": reported_on,
-        "candidate_email": item.get("CandidateEmail") or "",
+        "candidate_email": item.get("ReportedByCandidate") or "",
         "recruiter_email": item.get("InvitedBy") or "",
         "test_id": item.get("TestId"),
         "test_name": item.get("TestName") or "",

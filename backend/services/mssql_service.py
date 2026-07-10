@@ -69,7 +69,9 @@ _REPORTED_QUESTIONS_SQL = """
 SELECT
     qim.QuestionIssueId,
     qim.CreatedOn                              AS ReportedOn,
-    qim.TestInvitationId                       AS TestInvitationID,
+    ti.TestInvitationID,
+    ti.CandidateEmail                          AS ReportedByCandidate,
+    uinby.Email                                AS InvitedBy,
     qim.QuestionId,
     qm.Question,
     qm.Author,
@@ -94,10 +96,12 @@ SELECT
     qim.Comment,
     CASE WHEN qb.CustomerId = 310 THEN 'Issue from RTU QB' ELSE 'Issue from Customer QB' END AS ReportedQB
 FROM QuestionIssueMaster   qim  WITH (NOLOCK)
-JOIN QuestionMasters       qm   WITH (NOLOCK) ON qm.QueId   = qim.QuestionId
-JOIN QuestionBankMaster    qb   WITH (NOLOCK) ON qb.QBId    = qm.QBId
-JOIN CategoryMaster        cm   WITH (NOLOCK) ON cm.CategoryId = qb.CategoryId
-LEFT JOIN QuestionTypeMaster qtm WITH (NOLOCK) ON qtm.QueTypeId = qm.QueTypeId
+JOIN TestInvitaions        ti   WITH (NOLOCK) ON ti.TestInvitationID = qim.TestInvitationId
+JOIN QuestionMasters       qm   WITH (NOLOCK) ON qm.QueId            = qim.QuestionId
+JOIN QuestionBankMaster    qb   WITH (NOLOCK) ON qb.QBId             = qm.QBId
+JOIN CategoryMaster        cm   WITH (NOLOCK) ON cm.CategoryId       = qb.CategoryId
+LEFT JOIN UserMaster       uinby WITH (NOLOCK) ON uinby.UserId       = ti.InvitedBy
+LEFT JOIN QuestionTypeMaster qtm WITH (NOLOCK) ON qtm.QueTypeId      = qm.QueTypeId
 WHERE qim.CreatedOn >= '2025-01-01'
 """
 
