@@ -105,7 +105,7 @@ JOIN CategoryMaster        cm   WITH (NOLOCK) ON cm.CategoryId        = qb.Categ
 LEFT JOIN CustTest         ct   WITH (NOLOCK) ON ct.TestId            = ti.TestId
 LEFT JOIN UserMaster       uinby WITH (NOLOCK) ON uinby.UserId        = ti.InvitedBy
 LEFT JOIN QuestionTypeMaster qtm WITH (NOLOCK) ON qtm.QueTypeId       = qm.QueTypeId
-WHERE qim.CreatedOn >= '2024-01-01'
+WHERE qim.CreatedOn >= '2025-01-01'
 """
 
 

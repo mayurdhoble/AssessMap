@@ -16,12 +16,14 @@ _rq_cache: Optional[List[dict]] = None
 _rq_last_synced: Optional[datetime] = None
 _rq_last_error: Optional[str] = None
 _rq_fetching: bool = False  # True while background fetch is running
+_rq_fetch_started: Optional[datetime] = None  # when the current fetch began
 _CACHE_TTL = 600  # seconds
+_FETCH_STUCK_TIMEOUT = 600  # auto-reset _rq_fetching after 10 min
 
 
 def _fetch_in_background():
     """Fetch RQ data from MSSQL in a background thread — never blocks HTTP requests."""
-    global _rq_cache, _rq_last_synced, _rq_last_error, _rq_fetching
+    global _rq_cache, _rq_last_synced, _rq_last_error, _rq_fetching, _rq_fetch_started
     from services import mssql_service
     print("[RQ] ========== Background fetch STARTING ==========")
     try:
@@ -40,16 +42,27 @@ def _fetch_in_background():
         print(f"[RQ] Traceback:\n{traceback.format_exc()}")
     finally:
         _rq_fetching = False
+        _rq_fetch_started = None
         print(f"[RQ] _rq_fetching reset to False")
 
 
 def _trigger_fetch():
     """Start a background fetch if one is not already running."""
-    global _rq_fetching
+    global _rq_fetching, _rq_fetch_started
+    now = datetime.utcnow()
+    # Auto-reset if stuck for longer than the timeout
+    if _rq_fetching and _rq_fetch_started:
+        elapsed = (now - _rq_fetch_started).total_seconds()
+        if elapsed > _FETCH_STUCK_TIMEOUT:
+            print(f"[RQ] Fetch has been stuck for {int(elapsed)}s — force-resetting flag")
+            _rq_fetching = False
+            _rq_fetch_started = None
     if _rq_fetching:
-        print("[RQ] Fetch already in progress — skipping duplicate trigger")
+        elapsed = int((now - _rq_fetch_started).total_seconds()) if _rq_fetch_started else '?'
+        print(f"[RQ] Fetch already in progress ({elapsed}s elapsed) — skipping duplicate trigger")
         return False
     _rq_fetching = True
+    _rq_fetch_started = now
     print("[RQ] Starting background thread for fetch...")
     threading.Thread(target=_fetch_in_background, daemon=True).start()
     return True
@@ -171,6 +184,17 @@ def sync_status(_: str = Depends(require_auth)):
         "rows": len(_rq_cache) if _rq_cache is not None else 0,
         "last_error": _rq_last_error,
     }
+
+
+@router.post("/reset-fetch")
+def reset_fetch(_: str = Depends(require_auth)):
+    """Force-reset the _rq_fetching flag if it got stuck."""
+    global _rq_fetching, _rq_fetch_started
+    was_fetching = _rq_fetching
+    _rq_fetching = False
+    _rq_fetch_started = None
+    print(f"[RQ] /reset-fetch called — was_fetching={was_fetching}, flag cleared")
+    return {"success": True, "was_fetching": was_fetching}
 
 
 @router.get("/debug")
