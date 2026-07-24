@@ -102,7 +102,7 @@ JOIN QuestionBankMaster    qb   WITH (NOLOCK) ON qb.QBId             = qm.QBId
 JOIN CategoryMaster        cm   WITH (NOLOCK) ON cm.CategoryId       = qb.CategoryId
 LEFT JOIN UserMaster       uinby WITH (NOLOCK) ON uinby.UserId       = ti.InvitedBy
 LEFT JOIN QuestionTypeMaster qtm WITH (NOLOCK) ON qtm.QueTypeId      = qm.QueTypeId
-WHERE qim.CreatedOn >= '2025-01-01'
+WHERE qim.CreatedOn >= '2026-01-01'
 """
 
 
