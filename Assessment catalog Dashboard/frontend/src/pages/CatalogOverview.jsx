@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   PieChart, Pie, Cell, Legend, Tooltip,
@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import {
   Download, LibraryBig, CheckCircle2, Users, TrendingUp, Award, FileText,
-  ExternalLink, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowUpDown,
+  ExternalLink, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowUpDown, Search, X,
 } from 'lucide-react'
 import KPICard from '../components/KPICard'
 import useFilterStore from '../store/filterStore'
@@ -57,10 +57,22 @@ export default function CatalogOverview() {
   const [limit, setLimit] = useState(50)
   const [sortBy, setSortBy] = useState('created_on')
   const [sortDir, setSortDir] = useState('desc')
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch(searchInput.trim())
+      setPage(1)
+    }, 400)
+    return () => clearTimeout(t)
+  }, [searchInput])
+
+  const tableParams = search ? { ...params, search } : params
 
   const { data: kpis } = useQuery({
-    queryKey: ['catalog-kpis', params],
-    queryFn: () => api.get('/catalog/kpis', { params }).then((r) => r.data),
+    queryKey: ['catalog-kpis', tableParams],
+    queryFn: () => api.get('/catalog/kpis', { params: tableParams }).then((r) => r.data),
   })
 
   const { data: summary } = useQuery({
@@ -69,9 +81,9 @@ export default function CatalogOverview() {
   })
 
   const { data: list, isLoading } = useQuery({
-    queryKey: ['catalog-table', params, page, limit, sortBy, sortDir],
+    queryKey: ['catalog-table', tableParams, page, limit, sortBy, sortDir],
     queryFn: () => api.get('/catalog', {
-      params: { ...params, page, limit, sort_by: sortBy, sort_dir: sortDir },
+      params: { ...tableParams, page, limit, sort_by: sortBy, sort_dir: sortDir },
     }).then((r) => r.data),
   })
 
@@ -86,7 +98,7 @@ export default function CatalogOverview() {
   }
 
   const handleExport = async () => {
-    const res = await api.get('/catalog/export', { params, responseType: 'blob', timeout: 300_000 })
+    const res = await api.get('/catalog/export', { params: tableParams, responseType: 'blob', timeout: 300_000 })
     const url = URL.createObjectURL(new Blob([res.data]))
     const a = document.createElement('a')
     a.href = url
@@ -194,10 +206,28 @@ export default function CatalogOverview() {
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
           <p className="text-sm text-gray-500">
             {list ? `${list.total.toLocaleString()} assessments · Page ${list.page} of ${list.pages}` : 'Loading…'}
           </p>
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search by name…"
+              className="pl-8 pr-7 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 w-56"
+            />
+            {searchInput && (
+              <button
+                onClick={() => setSearchInput('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

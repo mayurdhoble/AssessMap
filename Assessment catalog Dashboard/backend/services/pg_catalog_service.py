@@ -69,8 +69,13 @@ def _where(
     labels: Optional[List[str]] = None,
     types: Optional[List[str]] = None,
     statuses: Optional[List[str]] = None,
+    search: Optional[str] = None,
 ):
     clauses, params = [], {}
+
+    if search:
+        clauses.append("test_name ILIKE :search")
+        params["search"] = f"%{search}%"
 
     if names:
         ph = ", ".join(f":name{i}" for i in range(len(names)))
@@ -212,7 +217,7 @@ def query_filter_options() -> dict:
 
 # ── KPIs ──────────────────────────────────────────────────────────────────────
 
-def query_kpis(names=None, date_from=None, date_to=None, labels=None, types=None, statuses=None) -> dict:
+def query_kpis(names=None, date_from=None, date_to=None, labels=None, types=None, statuses=None, search=None) -> dict:
     import database
     empty = {"total_assessments": 0, "published": 0, "draft": 0,
              "total_invited": 0, "total_completed": 0,
@@ -220,7 +225,7 @@ def query_kpis(names=None, date_from=None, date_to=None, labels=None, types=None
     if not database.engine:
         return empty
 
-    where, params = _where(names, date_from, date_to, labels, types, statuses)
+    where, params = _where(names, date_from, date_to, labels, types, statuses, search)
     row = _one(f"""
         SELECT
             COUNT(*)                                                            AS total,
@@ -249,12 +254,12 @@ def query_kpis(names=None, date_from=None, date_to=None, labels=None, types=None
 
 # ── Summary / charts ──────────────────────────────────────────────────────────
 
-def query_summary(names=None, date_from=None, date_to=None, labels=None, types=None, statuses=None) -> dict:
+def query_summary(names=None, date_from=None, date_to=None, labels=None, types=None, statuses=None, search=None) -> dict:
     import database
     if not database.engine:
         return {"status_split": [], "type_split": [], "top_invited": [], "funnel": []}
 
-    where, params = _where(names, date_from, date_to, labels, types, statuses)
+    where, params = _where(names, date_from, date_to, labels, types, statuses, search)
 
     # Status split (pie)
     status_rows = _rows(f"""
@@ -354,13 +359,13 @@ def _to_item(r: dict) -> dict:
 
 def query_table(
     names=None, date_from=None, date_to=None, labels=None, types=None, statuses=None,
-    sort_by="created_on", sort_dir="desc", page=1, limit=50,
+    sort_by="created_on", sort_dir="desc", page=1, limit=50, search=None,
 ) -> dict:
     import database
     if not database.engine:
         return {"total": 0, "page": page, "pages": 1, "items": []}
 
-    where, params = _where(names, date_from, date_to, labels, types, statuses)
+    where, params = _where(names, date_from, date_to, labels, types, statuses, search)
     sort_col  = _SORT_COL.get(sort_by, "created_on")
     direction = "ASC" if sort_dir == "asc" else "DESC"
     offset    = (page - 1) * limit
@@ -385,12 +390,12 @@ def query_table(
 
 # ── Export ────────────────────────────────────────────────────────────────────
 
-def query_export(names=None, date_from=None, date_to=None, labels=None, types=None, statuses=None) -> pd.DataFrame:
+def query_export(names=None, date_from=None, date_to=None, labels=None, types=None, statuses=None, search=None) -> pd.DataFrame:
     import database
     if not database.engine:
         return pd.DataFrame()
 
-    where, params = _where(names, date_from, date_to, labels, types, statuses)
+    where, params = _where(names, date_from, date_to, labels, types, statuses, search)
     rows = _rows(f"SELECT * FROM catalog_assessments {where} ORDER BY created_on DESC", params)
     if not rows:
         return pd.DataFrame()

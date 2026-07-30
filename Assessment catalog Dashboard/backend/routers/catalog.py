@@ -14,7 +14,7 @@ def _parse(val: Optional[str]):
     return [v.strip() for v in val.split(",") if v.strip()] if val else None
 
 
-def _filter_params(names, date_from, date_to, labels, types, statuses):
+def _filter_params(names, date_from, date_to, labels, types, statuses, search=None):
     return dict(
         names=_parse(names),
         date_from=date_from,
@@ -22,6 +22,7 @@ def _filter_params(names, date_from, date_to, labels, types, statuses):
         labels=_parse(labels),
         types=_parse(types),
         statuses=_parse(statuses),
+        search=search or None,
     )
 
 
@@ -56,9 +57,10 @@ def kpis(
     labels:    Optional[str] = Query(None),
     types:     Optional[str] = Query(None),
     statuses:  Optional[str] = Query(None),
+    search:    Optional[str] = Query(None),
     _: str = Depends(require_auth),
 ):
-    return pg_catalog_service.query_kpis(**_filter_params(names, date_from, date_to, labels, types, statuses))
+    return pg_catalog_service.query_kpis(**_filter_params(names, date_from, date_to, labels, types, statuses, search))
 
 
 # ── Charts ────────────────────────────────────────────────────────────────────
@@ -71,9 +73,10 @@ def summary(
     labels:    Optional[str] = Query(None),
     types:     Optional[str] = Query(None),
     statuses:  Optional[str] = Query(None),
+    search:    Optional[str] = Query(None),
     _: str = Depends(require_auth),
 ):
-    return pg_catalog_service.query_summary(**_filter_params(names, date_from, date_to, labels, types, statuses))
+    return pg_catalog_service.query_summary(**_filter_params(names, date_from, date_to, labels, types, statuses, search))
 
 
 # ── Table ─────────────────────────────────────────────────────────────────────
@@ -86,6 +89,7 @@ def table(
     labels:    Optional[str] = Query(None),
     types:     Optional[str] = Query(None),
     statuses:  Optional[str] = Query(None),
+    search:    Optional[str] = Query(None),
     sort_by:   str = "created_on",
     sort_dir:  str = "desc",
     page:      int = Query(1, ge=1),
@@ -93,7 +97,7 @@ def table(
     _: str = Depends(require_auth),
 ):
     return pg_catalog_service.query_table(
-        **_filter_params(names, date_from, date_to, labels, types, statuses),
+        **_filter_params(names, date_from, date_to, labels, types, statuses, search),
         sort_by=sort_by, sort_dir=sort_dir, page=page, limit=limit,
     )
 
@@ -108,9 +112,10 @@ def export(
     labels:    Optional[str] = Query(None),
     types:     Optional[str] = Query(None),
     statuses:  Optional[str] = Query(None),
+    search:    Optional[str] = Query(None),
     _: str = Depends(require_auth),
 ):
-    df = pg_catalog_service.query_export(**_filter_params(names, date_from, date_to, labels, types, statuses))
+    df = pg_catalog_service.query_export(**_filter_params(names, date_from, date_to, labels, types, statuses, search))
     if df.empty:
         raise HTTPException(status_code=404, detail="No data matching the current filters")
 
