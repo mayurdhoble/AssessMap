@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
   LayoutDashboard, TrendingUp, BarChart2, BookOpen,
   Building2, Tag, Upload, Menu, ChevronLeft,
-  Flag, LogOut, RefreshCw,
+  Flag, LogOut,
 } from 'lucide-react'
 import api from '../api/client'
 import UploadModal from './UploadModal'
@@ -22,28 +22,13 @@ const NAV = [
 
 export default function Layout() {
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [syncing, setSyncing] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const navigate = useNavigate()
-  const qc = useQueryClient()
 
   const { data: info, refetch } = useQuery({
     queryKey: ['data-info'],
     queryFn: () => api.get('/data/info').then((r) => r.data),
   })
-
-  const handleSyncNow = async () => {
-    setSyncing(true)
-    try {
-      await api.post('/data/sync', {}, { timeout: 300_000 })
-      qc.invalidateQueries()
-      refetch()
-    } catch (e) {
-      alert(e?.response?.data?.detail || 'Sync failed')
-    } finally {
-      setSyncing(false)
-    }
-  }
 
   const handleLogout = () => {
     localStorage.removeItem('auth_token')
@@ -118,19 +103,9 @@ export default function Layout() {
           {info?.sync_mode ? (
             /* ── MSSQL sync mode ── */
             <>
-              <button
-                onClick={handleSyncNow}
-                disabled={syncing}
-                title={collapsed ? 'Sync Now' : undefined}
-                className={`w-full flex items-center gap-2 px-2.5 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600
-                  text-white text-sm font-medium transition-colors disabled:opacity-60 ${collapsed ? 'justify-center' : ''}`}
-              >
-                <RefreshCw size={16} className={`shrink-0 ${syncing ? 'animate-spin' : ''}`} />
-                {!collapsed && (syncing ? 'Syncing…' : 'Sync Now')}
-              </button>
               {!collapsed && info?.loaded && (
                 <p className="text-xs text-gray-400 px-1 truncate">
-                  {info.rows?.toLocaleString()} rows · auto 10 min
+                  {info.rows?.toLocaleString()} rows · midnight sync
                 </p>
               )}
               {!collapsed && info?.uploaded_at && (
@@ -192,17 +167,9 @@ export default function Layout() {
               {info?.sync_mode ? (
                 <>
                   <p className="text-gray-400 mb-6 max-w-sm text-sm">
-                    Data syncs automatically every 10 minutes from MSSQL.<br />
-                    Click below to trigger an immediate sync.
+                    Data syncs automatically from MSSQL every midnight.<br />
+                    It will be available shortly after the first deployment.
                   </p>
-                  <button
-                    onClick={handleSyncNow}
-                    disabled={syncing}
-                    className="flex items-center gap-2 px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors disabled:opacity-60"
-                  >
-                    <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
-                    {syncing ? 'Syncing…' : 'Sync Now'}
-                  </button>
                 </>
               ) : (
                 <>
