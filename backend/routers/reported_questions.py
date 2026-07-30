@@ -391,10 +391,11 @@ def post_note(body: NoteBody, username: str = Depends(require_auth)):
     db = database.SessionLocal()
     try:
         tagged = body.tagged_users or []
-        # Also parse @mentions from content
-        import re
-        mentions = re.findall(r'@(\w+)', body.content)
-        all_tagged = list(set(tagged + mentions))
+        # Match content against known usernames (handles email-style usernames with dots/@ chars)
+        from routers.auth import _get_users
+        known_users = list(_get_users().keys())
+        content_mentions = [u for u in known_users if f'@{u}' in body.content]
+        all_tagged = list(set(tagged + content_mentions))
 
         note = RQNote(
             author=username,

@@ -37,7 +37,7 @@ export default function TeamNotes() {
     setNoteContent(val)
     const cursorPos = e.target.selectionStart
     const before = val.slice(0, cursorPos)
-    const match = before.match(/@(\w*)$/)
+    const match = before.match(/@([\w.@-]*)$/)
     setMentionAnchor(match ? { start: match.index, query: match[1] } : null)
   }
 
