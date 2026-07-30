@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timedelta
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel
 from jose import jwt, JWTError
 
@@ -51,6 +51,12 @@ def require_auth(authorization: str = Header(None)) -> str:
         return payload["sub"]
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+@router.get("/users")
+def list_users(_: str = Depends(require_auth)):
+    """Return list of all dashboard usernames (for @mention autocomplete)."""
+    return {"users": list(_get_users().keys())}
 
 
 def require_api_key(x_api_key: str = Header(None)):

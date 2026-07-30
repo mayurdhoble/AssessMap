@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   LayoutDashboard, TrendingUp, BarChart2, BookOpen,
   Building2, Tag, Upload, Menu, ChevronLeft,
-  Flag, LogOut,
+  Flag, LogOut, Bell,
 } from 'lucide-react'
 import api from '../api/client'
 import UploadModal from './UploadModal'
@@ -23,12 +23,42 @@ const NAV = [
 export default function Layout() {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
+  const notifRef = useRef(null)
   const navigate = useNavigate()
+  const qc = useQueryClient()
 
   const { data: info, refetch } = useQuery({
     queryKey: ['data-info'],
     queryFn: () => api.get('/data/info').then((r) => r.data),
   })
+
+  const { data: notifData } = useQuery({
+    queryKey: ['rq-notifications'],
+    queryFn: () => api.get('/v1/reported-questions/notifications').then((r) => r.data),
+    refetchInterval: 15000,
+  })
+
+  const markRead = useMutation({
+    mutationFn: (nid) => api.put(`/v1/reported-questions/notifications/${nid}/read`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rq-notifications'] }),
+  })
+
+  const markAllRead = useMutation({
+    mutationFn: () => api.put('/v1/reported-questions/notifications/read-all'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rq-notifications'] }),
+  })
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) {
+        setNotifOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   const handleLogout = () => {
     localStorage.removeItem('auth_token')
@@ -37,6 +67,7 @@ export default function Layout() {
   }
 
   const username = localStorage.getItem('auth_user') || 'Admin'
+  const unreadCount = notifData?.unread ?? 0
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -150,18 +181,79 @@ export default function Layout() {
 
       {/* Main area */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="min-h-[56px] bg-white border-b border-gray-100 flex items-center px-5 py-2 shrink-0 z-20 relative">
-          <GlobalFilters />
+        <header className="min-h-[56px] bg-white border-b border-gray-100 flex items-center px-5 py-2 shrink-0 z-20 relative gap-3">
+          <div className="flex-1">
+            <GlobalFilters />
+          </div>
+
+          {/* Notification bell */}
+          <div className="relative shrink-0" ref={notifRef}>
+            <button
+              onClick={() => setNotifOpen((o) => !o)}
+              className="relative p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+              title="Notifications"
+            >
+              <Bell size={18} />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-0.5 bg-orange-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {notifOpen && (
+              <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                  <span className="text-sm font-semibold text-gray-800">Notifications</span>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={() => markAllRead.mutate()}
+                      className="text-xs text-orange-600 hover:text-orange-700 font-medium"
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
+                  {(notifData?.items || []).length === 0 && (
+                    <p className="text-sm text-gray-400 text-center py-6">No notifications</p>
+                  )}
+                  {(notifData?.items || []).map((n) => (
+                    <div
+                      key={n.id}
+                      onClick={() => { if (!n.is_read) markRead.mutate(n.id) }}
+                      className={`px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${!n.is_read ? 'bg-orange-50/40' : ''}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {!n.is_read && (
+                          <span className="mt-1.5 w-2 h-2 rounded-full bg-orange-500 shrink-0" />
+                        )}
+                        <div className={`flex-1 min-w-0 ${n.is_read ? 'pl-4' : ''}`}>
+                          <p className="text-xs text-gray-700 leading-relaxed line-clamp-2">{n.preview}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] text-gray-400">from {n.from_user}</span>
+                            {n.question_issue_id && (
+                              <span className="text-[10px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded font-medium">Q#{n.question_issue_id}</span>
+                            )}
+                            <span className="text-[10px] text-gray-400 ml-auto">
+                              {new Date(n.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </header>
 
         <main className="flex-1 overflow-auto p-6">
           {!info?.loaded ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mb-4">
-                {info?.sync_mode
-                  ? <RefreshCw size={32} className="text-orange-500" />
-                  : <Upload size={32} className="text-orange-500" />
-                }
+                <Upload size={32} className="text-orange-500" />
               </div>
               <h2 className="text-xl font-semibold text-gray-700 mb-2">No data loaded</h2>
               {info?.sync_mode ? (

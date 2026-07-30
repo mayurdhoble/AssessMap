@@ -62,3 +62,51 @@ class SyncMeta(Base):
     source = Column(String, nullable=False)
     rows_loaded = Column(Integer, nullable=False)
     synced_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RQIssueFound(Base):
+    """Shared Yes/No per reported question — one row per question, visible to all users."""
+    __tablename__ = "rq_issue_found"
+
+    id = Column(Integer, primary_key=True)
+    question_issue_id = Column(Integer, unique=True, index=True, nullable=False)
+    value = Column(String, nullable=True)        # 'Yes' | 'No' | None
+    set_by = Column(String, nullable=True)
+    set_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RQRemark(Base):
+    """Shared remark per reported question — last-write-wins, visible to all users."""
+    __tablename__ = "rq_remarks"
+
+    id = Column(Integer, primary_key=True)
+    question_issue_id = Column(Integer, unique=True, index=True, nullable=False)
+    remark = Column(Text, nullable=True)
+    remarked_by = Column(String, nullable=True)
+    remarked_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RQNote(Base):
+    """Chat note on the RQ page — linked to a question_issue_id, visible to all users."""
+    __tablename__ = "rq_notes"
+
+    id = Column(Integer, primary_key=True)
+    author = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    question_issue_id = Column(Integer, nullable=True, index=True)
+    tagged_users = Column(String, nullable=True)   # comma-separated usernames
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RQNotification(Base):
+    """Notification for a user tagged in an RQ note."""
+    __tablename__ = "rq_notifications"
+
+    id = Column(Integer, primary_key=True)
+    to_user = Column(String, nullable=False, index=True)
+    from_user = Column(String, nullable=False)
+    note_id = Column(Integer, nullable=True)
+    question_issue_id = Column(Integer, nullable=True)
+    preview = Column(String, nullable=True)       # short text snippet
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

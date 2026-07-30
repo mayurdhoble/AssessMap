@@ -1,12 +1,15 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-// useMutation kept for markResolved / unmarkResolved
 
 import {
   PieChart, Pie, Cell, Legend, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
 } from 'recharts'
-import { Download, CheckCircle, Clock, AlertCircle, BarChart2, X, ExternalLink, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UserCheck } from 'lucide-react'
+import {
+  Download, CheckCircle, Clock, AlertCircle, BarChart2, X, ExternalLink,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UserCheck,
+  MessageSquare, Send,
+} from 'lucide-react'
 import KPICard from '../components/KPICard'
 import api from '../api/client'
 
@@ -48,9 +51,20 @@ export default function ReportedQuestions() {
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(50)
   const [detail, setDetail] = useState(null)
+  const [remarkDraft, setRemarkDraft] = useState('')
+  const [noteContent, setNoteContent] = useState('')
+  const [mentionAnchor, setMentionAnchor] = useState(null) // { start, query }
+  const noteInputRef = useRef(null)
   const currentUser = localStorage.getItem('auth_user') || ''
 
+  const openDetail = (row) => {
+    setDetail(row)
+    setRemarkDraft(row.remark || '')
+  }
+
   const set = (key) => (e) => setDraft((p) => ({ ...p, [key]: e.target.value }))
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
 
   const markResolved = useMutation({
     mutationFn: (qid) => api.post(`/v1/reported-questions/${qid}/mark`),
@@ -61,6 +75,30 @@ export default function ReportedQuestions() {
     mutationFn: (qid) => api.delete(`/v1/reported-questions/${qid}/mark`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['rq-list'] }),
   })
+
+  const setIssueFound = useMutation({
+    mutationFn: ({ qid, value }) => api.put(`/v1/reported-questions/${qid}/issue-found`, { value }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rq-list'] }),
+  })
+
+  const saveRemark = useMutation({
+    mutationFn: ({ qid, remark }) => api.put(`/v1/reported-questions/${qid}/remark`, { remark }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['rq-list'] })
+      setDetail((prev) => prev ? { ...prev, remark: vars.remark, remarked_by: currentUser } : prev)
+    },
+  })
+
+  const postNote = useMutation({
+    mutationFn: (body) => api.post('/v1/reported-questions/notes', body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['rq-notes'] })
+      setNoteContent('')
+      setMentionAnchor(null)
+    },
+  })
+
+  // ── Queries ───────────────────────────────────────────────────────────────
 
   const { data: options } = useQuery({
     queryKey: ['rq-options'],
@@ -77,6 +115,54 @@ export default function ReportedQuestions() {
     queryFn: () => api.get('/v1/reported-questions', { params: { ...toParams(applied), page, limit } }).then((r) => r.data),
   })
 
+  const { data: notesData } = useQuery({
+    queryKey: ['rq-notes'],
+    queryFn: () => api.get('/v1/reported-questions/notes').then((r) => r.data),
+    refetchInterval: 30000,
+  })
+
+  const { data: usersData } = useQuery({
+    queryKey: ['rq-users'],
+    queryFn: () => api.get('/auth/users').then((r) => r.data),
+  })
+
+  // ── @mention handler ──────────────────────────────────────────────────────
+
+  const handleNoteInput = (e) => {
+    const val = e.target.value
+    setNoteContent(val)
+    const cursorPos = e.target.selectionStart
+    const before = val.slice(0, cursorPos)
+    const match = before.match(/@(\w*)$/)
+    if (match) {
+      setMentionAnchor({ start: match.index, query: match[1] })
+    } else {
+      setMentionAnchor(null)
+    }
+  }
+
+  const insertMention = (username) => {
+    if (mentionAnchor === null) return
+    const before = noteContent.slice(0, mentionAnchor.start)
+    const after = noteContent.slice(mentionAnchor.start + 1 + mentionAnchor.query.length)
+    setNoteContent(`${before}@${username} ${after}`)
+    setMentionAnchor(null)
+    noteInputRef.current?.focus()
+  }
+
+  const submitNote = () => {
+    const content = noteContent.trim()
+    if (!content) return
+    postNote.mutate({ content, question_issue_id: null })
+  }
+
+  const filteredMentions = mentionAnchor !== null
+    ? (usersData?.users || []).filter((u) =>
+        u.toLowerCase().startsWith(mentionAnchor.query.toLowerCase()) && u !== currentUser
+      )
+    : []
+
+  // ── Misc handlers ─────────────────────────────────────────────────────────
 
   const handleExport = async () => {
     const res = await api.get('/v1/reported-questions/export', {
@@ -117,10 +203,10 @@ export default function ReportedQuestions() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <KPICard title="Total Issues"      value={stats ? stats.total.toLocaleString() : '—'}            color="orange" icon={AlertCircle} />
-        <KPICard title="Resolved"          value={stats ? stats.resolved.toLocaleString() : '—'}         color="green"  icon={CheckCircle} />
-        <KPICard title="Pending"           value={stats ? stats.pending.toLocaleString() : '—'}          color="purple" icon={Clock} />
-        <KPICard title="Resolution Rate"   value={stats ? `${stats.resolution_rate}%` : '—'}             color="blue"   icon={BarChart2} />
+        <KPICard title="Total Issues"      value={stats ? stats.total.toLocaleString() : '—'}        color="orange" icon={AlertCircle} />
+        <KPICard title="Resolved"          value={stats ? stats.resolved.toLocaleString() : '—'}     color="green"  icon={CheckCircle} />
+        <KPICard title="Pending"           value={stats ? stats.pending.toLocaleString() : '—'}      color="purple" icon={Clock} />
+        <KPICard title="Resolution Rate"   value={stats ? `${stats.resolution_rate}%` : '—'}         color="blue"   icon={BarChart2} />
       </div>
 
       {/* Charts */}
@@ -244,6 +330,7 @@ export default function ReportedQuestions() {
                 <th className="px-4 py-3 text-left font-medium">Problem Type</th>
                 <th className="px-4 py-3 text-left font-medium">Comment</th>
                 <th className="px-4 py-3 text-left font-medium">Status</th>
+                <th className="px-4 py-3 text-left font-medium">Issue Found</th>
                 <th className="px-4 py-3 text-left font-medium">Resolved By</th>
                 <th className="px-4 py-3 text-left font-medium">Action</th>
                 <th className="px-4 py-3 text-left font-medium">Detail</th>
@@ -251,10 +338,10 @@ export default function ReportedQuestions() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {isLoading && (
-                <tr><td colSpan={11} className="text-center py-10 text-gray-400">Loading…</td></tr>
+                <tr><td colSpan={13} className="text-center py-10 text-gray-400">Loading…</td></tr>
               )}
               {!isLoading && list?.items?.length === 0 && (
-                <tr><td colSpan={11} className="text-center py-10 text-gray-400">No issues found</td></tr>
+                <tr><td colSpan={13} className="text-center py-10 text-gray-400">No issues found</td></tr>
               )}
               {list?.items?.map((row) => (
                 <tr key={row.id} className="hover:bg-gray-50/60 transition-colors">
@@ -288,6 +375,24 @@ export default function ReportedQuestions() {
                       : <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-xs px-2 py-0.5 rounded-full">○ Pending</span>
                     }
                   </td>
+                  {/* Issue Found — shared Yes/No dropdown */}
+                  <td className="px-4 py-3">
+                    <select
+                      value={row.issue_found || ''}
+                      onChange={(e) => setIssueFound.mutate({ qid: row.question_issue_id, value: e.target.value || null })}
+                      className={`text-xs border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 cursor-pointer
+                        ${row.issue_found === 'Yes' ? 'border-red-300 bg-red-50 text-red-700' :
+                          row.issue_found === 'No'  ? 'border-green-300 bg-green-50 text-green-700' :
+                          'border-gray-200 bg-white text-gray-400'}`}
+                    >
+                      <option value="">—</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
+                    {row.issue_found_by && (
+                      <p className="text-[10px] text-gray-400 mt-0.5">{row.issue_found_by}</p>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                     {row.marked_by
                       ? <span className="inline-flex items-center gap-1 text-green-700 font-medium">
@@ -318,7 +423,7 @@ export default function ReportedQuestions() {
                   </td>
                   <td className="px-4 py-3">
                     <button
-                      onClick={() => setDetail(row)}
+                      onClick={() => openDetail(row)}
                       className="flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 font-medium hover:underline"
                     >
                       <ExternalLink size={12} />
@@ -365,16 +470,14 @@ export default function ReportedQuestions() {
               <ChevronLeft size={14} /> Prev
             </button>
 
-            {/* Numbered pages */}
-            {list && (() => {
-              const total = list.pages
-              const delta = 2
-              const range = []
-              for (let i = Math.max(1, page - delta); i <= Math.min(total, page + delta); i++) range.push(i)
+            {/* Page numbers */}
+            {(() => {
+              const total = list?.pages ?? 1
               const pages = []
-              if (range[0] > 1) { pages.push(1); if (range[0] > 2) pages.push('…') }
-              range.forEach((n) => pages.push(n))
-              if (range[range.length - 1] < total) { if (range[range.length - 1] < total - 1) pages.push('…'); pages.push(total) }
+              for (let n = 1; n <= total; n++) {
+                if (n === 1 || n === total || Math.abs(n - page) <= 1) pages.push(n)
+                else if (pages[pages.length - 1] !== '…') pages.push('…')
+              }
               return pages.map((n, i) =>
                 n === '…'
                   ? <span key={`el-${i}`} className="px-1.5 text-sm text-gray-400 select-none">…</span>
@@ -402,6 +505,92 @@ export default function ReportedQuestions() {
           </div>
         </div>
       </div>
+
+      {/* Chat / Team Notes panel */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <h3 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+          <MessageSquare size={16} className="text-orange-500" />
+          Team Notes
+          {(notesData?.total ?? 0) > 0 && (
+            <span className="text-xs text-gray-400 font-normal">{notesData.total} note{notesData.total !== 1 ? 's' : ''}</span>
+          )}
+        </h3>
+
+        {/* Note input */}
+        <div className="relative mb-5">
+          <textarea
+            ref={noteInputRef}
+            value={noteContent}
+            onChange={handleNoteInput}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitNote() }
+              if (e.key === 'Escape') setMentionAnchor(null)
+            }}
+            placeholder="Write a note… Use @username to tag a teammate (Enter to send, Shift+Enter for new line)"
+            rows={2}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400 resize-none pr-10"
+          />
+
+          {/* @mention autocomplete dropdown */}
+          {filteredMentions.length > 0 && (
+            <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[160px]">
+              {filteredMentions.map((u) => (
+                <button
+                  key={u}
+                  className="block w-full text-left px-3 py-2 text-sm hover:bg-orange-50 hover:text-orange-700 first:rounded-t-lg last:rounded-b-lg transition-colors"
+                  onMouseDown={(e) => { e.preventDefault(); insertMention(u) }}
+                >
+                  @{u}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={submitNote}
+            disabled={!noteContent.trim() || postNote.isPending}
+            title="Send note"
+            className="absolute right-2.5 bottom-2.5 p-1 text-orange-500 hover:text-orange-600 disabled:opacity-40 transition-colors"
+          >
+            <Send size={16} />
+          </button>
+        </div>
+
+        {/* Notes list */}
+        <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
+          {(notesData?.items || []).length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-6">No notes yet — be the first to write one!</p>
+          )}
+          {(notesData?.items || []).map((note) => (
+            <div key={note.id} className="flex gap-3">
+              <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-700 text-sm font-bold shrink-0">
+                {(note.author[0] || '?').toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className="text-xs font-semibold text-gray-800">{note.author}</span>
+                  <span className="text-xs text-gray-400">
+                    {new Date(note.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  {note.question_issue_id && (
+                    <span className="text-[10px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded font-medium">
+                      Q#{note.question_issue_id}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-700 mt-0.5 break-words">
+                  {note.content.split(/(@\w+)/g).map((part, i) =>
+                    part.startsWith('@')
+                      ? <span key={i} className="text-orange-600 font-medium">{part}</span>
+                      : part
+                  )}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Detail Modal */}
       {detail && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setDetail(null)}>
@@ -423,11 +612,19 @@ export default function ReportedQuestions() {
             {/* Modal body */}
             <div className="px-6 py-5 space-y-5">
               {/* Status badge */}
-              <div>
+              <div className="flex items-center gap-3 flex-wrap">
                 {detail.resolved
                   ? <span className="inline-flex items-center gap-1 bg-green-50 text-green-700 text-xs px-3 py-1 rounded-full font-medium">✓ Resolved</span>
                   : <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-xs px-3 py-1 rounded-full font-medium">○ Pending</span>
                 }
+                {detail.issue_found && (
+                  <span className={`inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full font-medium ${
+                    detail.issue_found === 'Yes' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'
+                  }`}>
+                    Issue Found: {detail.issue_found}
+                    {detail.issue_found_by && <span className="opacity-60 ml-1">· {detail.issue_found_by}</span>}
+                  </span>
+                )}
               </div>
 
               {/* Info grid */}
@@ -464,6 +661,38 @@ export default function ReportedQuestions() {
                   )}
                 </div>
               )}
+
+              {/* Remark section */}
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Shared Remark</p>
+                {detail.remark && (
+                  <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-sm text-gray-700 mb-3">
+                    <p className="whitespace-pre-wrap">{detail.remark}</p>
+                    {detail.remarked_by && (
+                      <p className="text-xs text-blue-500 mt-1">— {detail.remarked_by}</p>
+                    )}
+                  </div>
+                )}
+                <textarea
+                  value={remarkDraft}
+                  onChange={(e) => setRemarkDraft(e.target.value)}
+                  placeholder="Add or update a shared remark visible to all users…"
+                  rows={3}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400 resize-none"
+                />
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    onClick={() => saveRemark.mutate({ qid: detail.question_issue_id, remark: remarkDraft })}
+                    disabled={saveRemark.isPending || remarkDraft === (detail.remark || '')}
+                    className="px-4 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {saveRemark.isPending ? 'Saving…' : 'Save Remark'}
+                  </button>
+                  {saveRemark.isSuccess && (
+                    <span className="text-xs text-green-600">Saved!</span>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
