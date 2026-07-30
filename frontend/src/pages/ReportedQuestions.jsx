@@ -53,6 +53,7 @@ export default function ReportedQuestions() {
   const [detail, setDetail] = useState(null)
   const [remarkDraft, setRemarkDraft] = useState('')
   const [noteContent, setNoteContent] = useState('')
+  const [noteQid, setNoteQid] = useState('')
   const [mentionAnchor, setMentionAnchor] = useState(null) // { start, query }
   const noteInputRef = useRef(null)
   const currentUser = localStorage.getItem('auth_user') || ''
@@ -94,6 +95,7 @@ export default function ReportedQuestions() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['rq-notes'] })
       setNoteContent('')
+      setNoteQid('')
       setMentionAnchor(null)
     },
   })
@@ -153,7 +155,8 @@ export default function ReportedQuestions() {
   const submitNote = () => {
     const content = noteContent.trim()
     if (!content) return
-    postNote.mutate({ content, question_issue_id: null })
+    const qid = noteQid ? parseInt(noteQid, 10) : null
+    postNote.mutate({ content, question_issue_id: qid || null })
   }
 
   const filteredMentions = mentionAnchor !== null
@@ -516,44 +519,82 @@ export default function ReportedQuestions() {
           )}
         </h3>
 
-        {/* Note input */}
-        <div className="relative mb-5">
-          <textarea
-            ref={noteInputRef}
-            value={noteContent}
-            onChange={handleNoteInput}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitNote() }
-              if (e.key === 'Escape') setMentionAnchor(null)
-            }}
-            placeholder="Write a note… Use @username to tag a teammate (Enter to send, Shift+Enter for new line)"
-            rows={2}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400 resize-none pr-10"
-          />
-
-          {/* @mention autocomplete dropdown */}
-          {filteredMentions.length > 0 && (
-            <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[160px]">
-              {filteredMentions.map((u) => (
-                <button
-                  key={u}
-                  className="block w-full text-left px-3 py-2 text-sm hover:bg-orange-50 hover:text-orange-700 first:rounded-t-lg last:rounded-b-lg transition-colors"
-                  onMouseDown={(e) => { e.preventDefault(); insertMention(u) }}
-                >
-                  @{u}
-                </button>
-              ))}
+        {/* Note composer */}
+        <div className="border border-gray-200 rounded-xl overflow-visible mb-5">
+          {/* Top row: Q# link + user pills */}
+          <div className="flex items-center gap-2 px-3 pt-3 pb-2 border-b border-gray-100 flex-wrap">
+            <span className="text-xs text-gray-400 shrink-0">Link to Q#:</span>
+            <input
+              type="number"
+              value={noteQid}
+              onChange={(e) => setNoteQid(e.target.value)}
+              placeholder="optional issue ID"
+              className="w-32 border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-orange-400"
+            />
+            <span className="text-xs text-gray-400 ml-2 shrink-0">Tag users:</span>
+            <div className="flex flex-wrap gap-1">
+              {(usersData?.users || [])
+                .filter((u) => u !== currentUser)
+                .map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      const mention = `@${u} `
+                      if (!noteContent.includes(mention)) {
+                        setNoteContent((prev) => prev ? `${prev.trimEnd()} ${mention}` : mention)
+                      }
+                      noteInputRef.current?.focus()
+                    }}
+                    className="text-[11px] px-2 py-0.5 rounded-full border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 transition-colors"
+                  >
+                    @{u}
+                  </button>
+                ))}
             </div>
-          )}
+          </div>
 
-          <button
-            onClick={submitNote}
-            disabled={!noteContent.trim() || postNote.isPending}
-            title="Send note"
-            className="absolute right-2.5 bottom-2.5 p-1 text-orange-500 hover:text-orange-600 disabled:opacity-40 transition-colors"
-          >
-            <Send size={16} />
-          </button>
+          {/* Textarea */}
+          <div className="relative">
+            <textarea
+              ref={noteInputRef}
+              value={noteContent}
+              onChange={handleNoteInput}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitNote() }
+                if (e.key === 'Escape') setMentionAnchor(null)
+              }}
+              placeholder="Write a message… type @username to tag someone (Enter to send, Shift+Enter for new line)"
+              rows={3}
+              className="w-full px-3 py-2 text-sm focus:outline-none resize-none pr-12 rounded-b-xl"
+            />
+
+            {/* @mention autocomplete dropdown */}
+            {filteredMentions.length > 0 && (
+              <div className="absolute bottom-full left-3 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[160px]">
+                {filteredMentions.map((u) => (
+                  <button
+                    key={u}
+                    className="block w-full text-left px-3 py-2 text-sm hover:bg-orange-50 hover:text-orange-700 first:rounded-t-lg last:rounded-b-lg transition-colors"
+                    onMouseDown={(e) => { e.preventDefault(); insertMention(u) }}
+                  >
+                    @{u}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={submitNote}
+              disabled={!noteContent.trim() || postNote.isPending}
+              title="Send note (Enter)"
+              className="absolute right-3 bottom-3 flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-40"
+            >
+              <Send size={13} />
+              Send
+            </button>
+          </div>
         </div>
 
         {/* Notes list */}
