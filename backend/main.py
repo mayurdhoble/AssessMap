@@ -63,14 +63,11 @@ async def lifespan(app: FastAPI):
         )
 
         # If PostgreSQL has no data yet, do a one-time immediate sync
+        # (tables are already created above, so COPY is safe to run now)
         if not info.get("loaded"):
             import threading
-            def _startup_sync():
-                import time
-                time.sleep(10)  # let server fully start
-                print("[Startup] PostgreSQL empty — triggering one-time immediate sync...")
-                _sync_assessments()
-            threading.Thread(target=_startup_sync, daemon=True).start()
+            print("[Startup] PostgreSQL empty — triggering one-time immediate sync...")
+            threading.Thread(target=_sync_assessments, daemon=True).start()
 
         scheduler.start()
         print("[Startup] MSSQL scheduler started (midnight daily sync)")
