@@ -21,7 +21,7 @@ export default function KPICard({ title, value, subtitle, color = 'orange', icon
           </span>
         )}
       </div>
-      <p className={`text-3xl font-bold ${textColor}`}>{value ?? '—'}</p>
+      <p className={`text-2xl font-bold leading-tight break-all ${textColor}`}>{value ?? '—'}</p>
       {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
     </div>
   )

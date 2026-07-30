@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+// useMutation kept for markResolved / unmarkResolved
 
 import {
   PieChart, Pie, Cell, Legend, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
 } from 'recharts'
-import { Download, CheckCircle, Clock, AlertCircle, BarChart2, RefreshCw, X, ExternalLink, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UserCheck } from 'lucide-react'
+import { Download, CheckCircle, Clock, AlertCircle, BarChart2, X, ExternalLink, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UserCheck } from 'lucide-react'
 import KPICard from '../components/KPICard'
 import api from '../api/client'
 
@@ -46,28 +47,10 @@ export default function ReportedQuestions() {
   const [applied, setApplied] = useState(EMPTY)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(50)
-  const [autoRefresh, setAutoRefresh] = useState(false)
   const [detail, setDetail] = useState(null)
   const currentUser = localStorage.getItem('auth_user') || ''
 
   const set = (key) => (e) => setDraft((p) => ({ ...p, [key]: e.target.value }))
-
-  const interval = autoRefresh ? 10_000 : false
-
-  const { data: syncStatus } = useQuery({
-    queryKey: ['rq-sync-status'],
-    queryFn: () => api.get('/v1/reported-questions/sync-status').then((r) => r.data),
-    refetchInterval: interval,
-  })
-
-  const syncNow = useMutation({
-    mutationFn: () => api.post('/v1/reported-questions/sync'),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['rq-list'] })
-      qc.invalidateQueries({ queryKey: ['rq-analytics'] })
-      qc.invalidateQueries({ queryKey: ['rq-sync-status'] })
-    },
-  })
 
   const markResolved = useMutation({
     mutationFn: (qid) => api.post(`/v1/reported-questions/${qid}/mark`),
@@ -82,19 +65,16 @@ export default function ReportedQuestions() {
   const { data: options } = useQuery({
     queryKey: ['rq-options'],
     queryFn: () => api.get('/v1/reported-questions/filter-options').then((r) => r.data),
-    refetchInterval: interval,
   })
 
   const { data: stats } = useQuery({
     queryKey: ['rq-analytics', applied],
     queryFn: () => api.get('/v1/reported-questions/analytics', { params: toParams(applied) }).then((r) => r.data),
-    refetchInterval: interval,
   })
 
   const { data: list, isLoading } = useQuery({
     queryKey: ['rq-list', applied, page, limit],
     queryFn: () => api.get('/v1/reported-questions', { params: { ...toParams(applied), page, limit } }).then((r) => r.data),
-    refetchInterval: interval,
   })
 
 
@@ -125,42 +105,6 @@ export default function ReportedQuestions() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-bold text-gray-800">Reported Questions</h1>
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Sync Now — only in MSSQL mode */}
-          {syncStatus?.sync_mode && (
-            <div className="flex flex-col items-end gap-0.5">
-              <button
-                onClick={() => syncNow.mutate()}
-                disabled={syncNow.isPending}
-                className="flex items-center gap-2 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
-              >
-                <RefreshCw size={14} className={syncNow.isPending ? 'animate-spin' : ''} />
-                {syncNow.isPending ? 'Syncing…' : 'Sync Now'}
-              </button>
-              {syncStatus?.last_synced && (
-                <span className="text-xs text-gray-400">
-                  Last: {new Date(syncStatus.last_synced).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Auto-refresh toggle */}
-          <button
-            onClick={() => setAutoRefresh((v) => !v)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
-              autoRefresh
-                ? 'bg-green-50 border-green-300 text-green-700'
-                : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-            }`}
-          >
-            <RefreshCw size={14} className={autoRefresh ? 'animate-spin' : ''} />
-            <span>Auto Refresh</span>
-            <span className={`w-8 h-4 rounded-full transition-colors relative ${autoRefresh ? 'bg-green-500' : 'bg-gray-300'}`}>
-              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${autoRefresh ? 'left-4' : 'left-0.5'}`} />
-            </span>
-            <span className="text-xs opacity-70">{autoRefresh ? '10s' : 'Off'}</span>
-          </button>
-
           <button
             onClick={handleExport}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
