@@ -62,11 +62,14 @@ async def lifespan(app: FastAPI):
             id="sync_assessments_midnight",
         )
 
-        # If no data in PostgreSQL yet, do an immediate sync now
-        if not info.get("loaded"):
-            import threading
-            print("[Startup] No data found — triggering immediate sync in background...")
-            threading.Thread(target=_sync_assessments, daemon=True).start()
+        # Always trigger an immediate sync on startup so data is fresh after deploy
+        import threading
+        def _startup_sync():
+            import time
+            time.sleep(10)  # let server fully start
+            print("[Startup] Triggering immediate assessment sync...")
+            _sync_assessments()
+        threading.Thread(target=_startup_sync, daemon=True).start()
 
         scheduler.start()
         print("[Startup] MSSQL scheduler started (midnight daily sync)")
