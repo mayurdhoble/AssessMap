@@ -1,14 +1,8 @@
 from fastapi import APIRouter, Query
 from typing import Optional
-from services.data_service import store
+from services import pg_service
 
 router = APIRouter(prefix="/api/qb", tags=["qb"])
-
-
-def _parse_list(val):
-    if not val:
-        return None
-    return [v.strip() for v in val.split(",") if v.strip()]
 
 
 @router.get("/summary")
@@ -21,22 +15,8 @@ def qb_summary(
     section_types: Optional[str] = None,
     limit: int = 100,
 ):
-    df = store.get_filtered(date_from, date_to, _parse_list(companies), None, library, account_type, _parse_list(section_types))
-    if df.empty:
-        return []
-    result = (
-        df.groupby(["QB Name", "Library"])
-        .agg(
-            total_reports=("Reports Generated", "sum"),
-            companies_using=("Company Name", "nunique"),
-            assessments=("Test Name", "nunique"),
-        )
-        .sort_values("total_reports", ascending=False)
-        .head(limit)
-        .reset_index()
-    )
-    result.columns = ["qb_name", "library", "total_reports", "companies_using", "assessments"]
-    return result.to_dict(orient="records")
+    return pg_service.query_qb_summary(date_from, date_to, companies,
+                                       library, account_type, section_types, limit)
 
 
 @router.get("/{qb_name}/top-customers")
@@ -48,13 +28,5 @@ def qb_top_customers(
     account_type: Optional[str] = None,
     limit: int = 10,
 ):
-    df = store.get_filtered(date_from, date_to, None, [qb_name], library, account_type)
-    if df.empty:
-        return []
-    result = (
-        df.groupby("Company Name")["Reports Generated"]
-        .sum()
-        .sort_values(ascending=False)
-        .head(limit)
-    )
-    return [{"company": k, "reports": int(v)} for k, v in result.items()]
+    return pg_service.query_qb_top_customers(qb_name, date_from, date_to,
+                                             library, account_type, limit)

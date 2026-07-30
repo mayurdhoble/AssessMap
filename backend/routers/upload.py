@@ -1,13 +1,50 @@
 import io
+import pandas as pd
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
-import pandas as pd
-from services.data_service import store
 from routers.auth import require_auth
+from services import pg_service
 
 router = APIRouter(prefix="/api", tags=["upload"])
+
+
+def _parse_file(content: bytes, filename: str) -> pd.DataFrame:
+    """Parse an uploaded CSV or Excel file into a normalised DataFrame."""
+    if filename.lower().endswith((".xlsx", ".xls")):
+        df = pd.read_excel(io.BytesIO(content))
+    else:
+        df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig")
+
+    df.columns = [col.strip() for col in df.columns]
+
+    required = {
+        "Recruiter Email", "Company Name", "AccountTypeId",
+        "Test Name", "QB Name", "Library", "Category",
+        "Reports Generated", "NavigationType",
+    }
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Missing columns: {', '.join(sorted(missing))}")
+
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+
+    df["Reports Generated"] = (
+        pd.to_numeric(df["Reports Generated"], errors="coerce").fillna(0).astype(int)
+    )
+    df["AccountTypeId"] = (
+        pd.to_numeric(df["AccountTypeId"], errors="coerce")
+        .fillna(0).astype(int).astype(str)
+    )
+    for col in ["Recruiter Email", "Company Name", "QB Name", "Library",
+                "Category", "NavigationType", "Test Name"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+
+    df = df[df["Company Name"].notna() & (df["Company Name"] != "") & (df["Company Name"] != "nan")]
+    return df
 
 
 @router.post("/upload")
@@ -15,8 +52,16 @@ async def upload_file(file: UploadFile = File(...)):
     content = await file.read()
     filename = file.filename or "uploaded_file.csv"
     try:
-        result = store.load(content, filename)
-        return {"success": True, **result}
+        df = _parse_file(content, filename)
+        result = pg_service.bulk_load(df, filename)
+        has_date = bool("Date" in df.columns and df["Date"].notna().any())
+        return {
+            "success": True,
+            "rows": result["rows"],
+            "filename": filename,
+            "uploaded_at": result["synced_at"],
+            "has_date": has_date,
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -25,17 +70,16 @@ async def upload_file(file: UploadFile = File(...)):
 
 @router.post("/data/sync")
 def sync_from_mssql(_: str = Depends(require_auth)):
-    """Pull fresh assessment data from MSSQL and replace the in-memory dataset."""
-    import traceback
-    import os
+    """Pull fresh assessment data from MSSQL and store into PostgreSQL."""
+    import traceback, os
     from services import mssql_service
     if not mssql_service.is_configured():
         raise HTTPException(status_code=503, detail="MSSQL not configured — add DB_HOST env var")
     print(f"[Sync] Attempting MSSQL connection: host={os.getenv('DB_HOST')} port={os.getenv('DB_PORT')} db={os.getenv('DB_NAME')} user={os.getenv('DB_USER')}")
     try:
         df = mssql_service.fetch_assessments()
-        result = store.sync_from_df(df)
-        print(f"[Sync] SUCCESS — {result.get('rows')} rows loaded")
+        result = pg_service.bulk_load(df, "MSSQL Sync")
+        print(f"[Sync] SUCCESS — {result['rows']:,} rows written to PostgreSQL")
         return {"success": True, **result}
     except Exception as e:
         print(f"[Sync] FAILED — {e}")
@@ -43,67 +87,105 @@ def sync_from_mssql(_: str = Depends(require_auth)):
         raise HTTPException(status_code=500, detail=f"Assessment sync failed: {str(e)}")
 
 
+@router.get("/data/info")
+def data_info():
+    from services import mssql_service
+    info = pg_service.get_info()
+    info["sync_mode"] = mssql_service.is_configured()
+    return info
+
+
 @router.get("/data/sample")
 def data_sample(_: str = Depends(require_auth)):
-    """Return first 3 rows as raw dicts — for debugging column names and values."""
-    if not store.is_loaded():
+    """Return first 3 rows for debugging."""
+    if not pg_service.is_loaded():
         return {"loaded": False, "rows": []}
-    sample = store.df.head(3).copy()
-    # Convert timestamps to strings so JSON serialises cleanly
-    for col in sample.select_dtypes(include=["datetime64[ns]", "datetime64[ns, UTC]"]).columns:
-        sample[col] = sample[col].astype(str)
-    return {"columns": list(sample.columns), "rows": sample.to_dict(orient="records")}
+    from sqlalchemy import text
+    from database import engine
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT * FROM assessments LIMIT 3"))
+        cols = list(result.keys())
+        rows = result.fetchall()
+    return {
+        "columns": cols,
+        "rows": [dict(r._mapping) for r in rows],
+    }
+
+
+@router.get("/export/assessments")
+def export_assessments(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    companies: Optional[str] = Query(None),
+    qbs: Optional[str] = Query(None),
+    library: Optional[str] = None,
+    account_type: Optional[str] = None,
+    section_types: Optional[str] = None,
+    _: str = Depends(require_auth),
+):
+    """Export filtered assessment rows as Excel."""
+    df = pg_service.export_rows(date_from, date_to, companies, qbs,
+                                library, account_type, section_types)
+    if df.empty:
+        raise HTTPException(status_code=404, detail="No data matching the current filters")
+
+    buf = io.BytesIO()
+    df.to_excel(buf, index=False)
+    buf.seek(0)
+    filename = f"assessments_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.delete("/data")
+def clear_data():
+    """Wipe all assessment data from PostgreSQL."""
+    from sqlalchemy import text
+    from database import engine
+    with engine.connect() as conn:
+        conn.execute(text("TRUNCATE TABLE assessments RESTART IDENTITY"))
+        conn.execute(text("TRUNCATE TABLE sync_meta"))
+        conn.commit()
+    return {"success": True, "message": "All assessment data cleared"}
 
 
 @router.get("/debug/section-type")
 def section_type_debug(_: str = Depends(require_auth)):
-    """Check what SectionTypeName values exist in the DB and in the loaded dataset."""
+    """Check SectionTypeName values in the live DB and PostgreSQL."""
     from services import mssql_service
     if not mssql_service.is_configured():
         raise HTTPException(status_code=503, detail="MSSQL not configured")
 
-    # Check 1: what columns does CustTestSections actually have?
-    schema_sql = """
-    SELECT COLUMN_NAME, DATA_TYPE
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_NAME = 'CustTestSections'
-    ORDER BY ORDINAL_POSITION
-    """
-    # Check 2: distinct SectionTypeName values from the live join
     values_sql = """
-    SELECT TOP 20
-        stm.SectionTypeName,
-        COUNT(*) AS row_count
+    SELECT TOP 20 stm.SectionTypeName, COUNT(*) AS row_count
     FROM CustTestSections cts
     LEFT JOIN SectionTypeMaster stm ON stm.SectionTypeId = cts.SectionTypeId
-    GROUP BY stm.SectionTypeName
-    ORDER BY row_count DESC
+    GROUP BY stm.SectionTypeName ORDER BY row_count DESC
     """
     with mssql_service._get_conn() as conn:
         cursor = conn.cursor(as_dict=True)
-        cursor.execute(schema_sql)
-        cts_columns = cursor.fetchall()
         cursor.execute(values_sql)
         db_values = cursor.fetchall()
 
-    # Check 3: what's in the loaded parquet?
-    in_memory = []
-    if store.is_loaded() and "SectionTypeName" in store.df.columns:
-        counts = store.df["SectionTypeName"].value_counts().head(20)
-        in_memory = [{"value": k, "count": int(v)} for k, v in counts.items()]
-    elif store.is_loaded():
-        in_memory = "SectionTypeName column NOT present in loaded dataset"
+    from sqlalchemy import text
+    from database import engine as pg_engine
+    with pg_engine.connect() as conn:
+        pg_vals = conn.execute(text(
+            "SELECT section_type_name, COUNT(*) AS cnt FROM assessments "
+            "GROUP BY section_type_name ORDER BY cnt DESC LIMIT 20"
+        )).fetchall()
 
     return {
-        "cust_test_sections_columns": [c["COLUMN_NAME"] for c in cts_columns],
-        "db_section_type_values": db_values,
-        "in_memory_section_type_values": in_memory,
+        "mssql_section_type_values": db_values,
+        "postgres_section_type_values": [dict(r._mapping) for r in pg_vals],
     }
 
 
 @router.get("/debug/mssql-schema")
 def mssql_schema(_: str = Depends(require_auth)):
-    """Return column list for all iMocha tables — temporary debug endpoint."""
     from services import mssql_service
     if not mssql_service.is_configured():
         raise HTTPException(status_code=503, detail="MSSQL not configured")
@@ -130,72 +212,3 @@ def mssql_schema(_: str = Depends(require_auth)):
             tables[t] = []
         tables[t].append({"column": r["COLUMN_NAME"], "type": r["DATA_TYPE"]})
     return tables
-
-
-@router.get("/export/assessments")
-def export_assessments(
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    companies: Optional[str] = Query(None),
-    qbs: Optional[str] = Query(None),
-    library: Optional[str] = None,
-    account_type: Optional[str] = None,
-    section_types: Optional[str] = None,
-    _: str = Depends(require_auth),
-):
-    """Export filtered assessment rows as Excel."""
-    def _parse(val):
-        return [v.strip() for v in val.split(",") if v.strip()] if val else None
-
-    df = store.get_filtered(
-        date_from, date_to,
-        _parse(companies), _parse(qbs),
-        library, account_type, _parse(section_types),
-    )
-
-    if df.empty:
-        raise HTTPException(status_code=404, detail="No data matching the current filters")
-
-    # Convert Date column to string for Excel compatibility
-    export_df = df.copy()
-    if "Date" in export_df.columns:
-        export_df["Date"] = export_df["Date"].astype(str)
-
-    buf = io.BytesIO()
-    export_df.to_excel(buf, index=False)
-    buf.seek(0)
-
-    filename = f"assessments_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
-    return StreamingResponse(
-        buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
-    )
-
-
-@router.delete("/data")
-def clear_data():
-    """Wipe all persisted data and reset in-memory state."""
-    store.clear()
-    return {"success": True, "message": "All data cleared"}
-
-
-@router.get("/data/info")
-def data_info():
-    from services import mssql_service
-    sync_mode = mssql_service.is_configured()
-    if not store.is_loaded():
-        return {"loaded": False, "sync_mode": sync_mode}
-    has_date = bool("Date" in store.df.columns and store.df["Date"].notna().any())
-    return {
-        "loaded": True,
-        "sync_mode": sync_mode,
-        "filename": store.filename,
-        "rows": len(store.df),
-        "uploaded_at": store.uploaded_at.isoformat(),
-        "has_date": has_date,
-        "date_range": {
-            "min": store.df["Date"].min().isoformat() if has_date else None,
-            "max": store.df["Date"].max().isoformat() if has_date else None,
-        },
-    }

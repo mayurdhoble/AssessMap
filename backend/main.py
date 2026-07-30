@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 
 from routers import upload, filters, overview, trends, usage, qb, company, category
 from routers import auth, reported_questions
-from services.data_service import store
 import database
 import models  # noqa: F401 — registers ORM models with Base.metadata
 
@@ -16,16 +15,17 @@ load_dotenv()
 # ── Scheduler jobs ────────────────────────────────────────────────────────────
 
 def _sync_assessments():
-    from services import mssql_service
+    """Fetch from MSSQL and write to Railway PostgreSQL."""
+    from services import mssql_service, pg_service
     if not mssql_service.is_configured():
         return
     try:
+        print("[Scheduler] Assessment sync starting...")
         df = mssql_service.fetch_assessments()
-        result = store.sync_from_df(df)
-        print(f"[Scheduler] Assessment sync: {result['rows']:,} rows")
+        result = pg_service.bulk_load(df, "MSSQL Sync")
+        print(f"[Scheduler] Assessment sync complete: {result['rows']:,} rows in PostgreSQL")
     except Exception as e:
         print(f"[Scheduler] Assessment sync failed: {e}")
-
 
 
 # ── App lifespan ──────────────────────────────────────────────────────────────
@@ -39,31 +39,46 @@ async def lifespan(app: FastAPI):
     else:
         print("[Startup] DATABASE_URL not set — skipping DB init")
 
-    # Load persisted assessment dataset from Railway volume
-    store.load_from_disk()
-    if store.is_loaded():
-        print(f"[Startup] Loaded {len(store.df):,} rows from disk ({store.filename})")
+    # Report current data state
+    from services import pg_service
+    info = pg_service.get_info()
+    if info.get("loaded"):
+        print(f"[Startup] PostgreSQL has {info['rows']:,} assessment rows (last sync: {info.get('uploaded_at', 'unknown')})")
     else:
-        print("[Startup] No persisted dataset found — waiting for first sync/upload")
+        print("[Startup] No assessment data in PostgreSQL — waiting for first sync")
 
-    # Start background scheduler if MSSQL is configured
-    from services import mssql_service
     scheduler = None
+    from services import mssql_service
     if mssql_service.is_configured():
         from apscheduler.schedulers.background import BackgroundScheduler
         scheduler = BackgroundScheduler()
-        scheduler.add_job(_sync_assessments, "interval", minutes=10, id="sync_assessments")
-        scheduler.start()
-        print("[Startup] MSSQL scheduler started (10-min interval for assessments)")
 
-        # Kick off RQ background fetch 3 min after startup (avoids competing with assessment sync)
+        # Midnight sync — assessments refreshed once per day
+        scheduler.add_job(
+            _sync_assessments,
+            "cron",
+            hour=0,
+            minute=0,
+            id="sync_assessments_midnight",
+        )
+
+        # If no data in PostgreSQL yet, do an immediate sync now
+        if not info.get("loaded"):
+            import threading
+            print("[Startup] No data found — triggering immediate sync in background...")
+            threading.Thread(target=_sync_assessments, daemon=True).start()
+
+        scheduler.start()
+        print("[Startup] MSSQL scheduler started (midnight daily sync)")
+
+        # Trigger RQ background fetch 3 min after startup
         from routers.reported_questions import _trigger_fetch as rq_trigger
         import threading as _threading
         def _delayed_rq():
             import time
-            print("[Startup] RQ fetch scheduled — waiting 180s for assessment sync to settle...")
+            print("[Startup] RQ fetch scheduled — waiting 180s...")
             time.sleep(180)
-            print("[Startup] Triggering delayed RQ background fetch...")
+            print("[Startup] Triggering RQ background fetch...")
             rq_trigger()
         _threading.Thread(target=_delayed_rq, daemon=True).start()
     else:
