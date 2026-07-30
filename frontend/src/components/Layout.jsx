@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   LayoutDashboard, TrendingUp, BarChart2, BookOpen,
   Building2, Tag, Upload, Menu, ChevronLeft,
-  Flag, LogOut, Bell,
+  Flag, LogOut, Bell, MessageSquare,
 } from 'lucide-react'
 import api from '../api/client'
 import UploadModal from './UploadModal'
@@ -18,6 +18,7 @@ const NAV = [
   { path: '/company',             label: 'Companies',           icon: Building2 },
   { path: '/category',            label: 'Categories',          icon: Tag },
   { path: '/reported-questions',  label: 'Reported Questions',  icon: Flag },
+  { path: '/team-notes',          label: 'Team Notes',          icon: MessageSquare },
 ]
 
 export default function Layout() {

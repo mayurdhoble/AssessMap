@@ -10,6 +10,7 @@ import CompanyDrilldown from './pages/CompanyDrilldown'
 import CompanyDetail from './pages/CompanyDetail'
 import CategoryAnalysis from './pages/CategoryAnalysis'
 import ReportedQuestions from './pages/ReportedQuestions'
+import TeamNotes from './pages/TeamNotes'
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="company/:companyName" element={<CompanyDetail />} />
           <Route path="category" element={<CategoryAnalysis />} />
           <Route path="reported-questions" element={<ReportedQuestions />} />
+          <Route path="team-notes" element={<TeamNotes />} />
         </Route>
       </Route>
     </Routes>

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import {
@@ -8,7 +8,6 @@ import {
 import {
   Download, CheckCircle, Clock, AlertCircle, BarChart2, X, ExternalLink,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UserCheck,
-  MessageSquare, Send,
 } from 'lucide-react'
 import KPICard from '../components/KPICard'
 import api from '../api/client'
@@ -52,10 +51,6 @@ export default function ReportedQuestions() {
   const [limit, setLimit] = useState(50)
   const [detail, setDetail] = useState(null)
   const [remarkDraft, setRemarkDraft] = useState('')
-  const [noteContent, setNoteContent] = useState('')
-  const [noteQid, setNoteQid] = useState('')
-  const [mentionAnchor, setMentionAnchor] = useState(null) // { start, query }
-  const noteInputRef = useRef(null)
   const currentUser = localStorage.getItem('auth_user') || ''
 
   const openDetail = (row) => {
@@ -90,16 +85,6 @@ export default function ReportedQuestions() {
     },
   })
 
-  const postNote = useMutation({
-    mutationFn: (body) => api.post('/v1/reported-questions/notes', body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['rq-notes'] })
-      setNoteContent('')
-      setNoteQid('')
-      setMentionAnchor(null)
-    },
-  })
-
   // ── Queries ───────────────────────────────────────────────────────────────
 
   const { data: options } = useQuery({
@@ -116,54 +101,6 @@ export default function ReportedQuestions() {
     queryKey: ['rq-list', applied, page, limit],
     queryFn: () => api.get('/v1/reported-questions', { params: { ...toParams(applied), page, limit } }).then((r) => r.data),
   })
-
-  const { data: notesData } = useQuery({
-    queryKey: ['rq-notes'],
-    queryFn: () => api.get('/v1/reported-questions/notes').then((r) => r.data),
-    refetchInterval: 30000,
-  })
-
-  const { data: usersData } = useQuery({
-    queryKey: ['rq-users'],
-    queryFn: () => api.get('/auth/users').then((r) => r.data),
-  })
-
-  // ── @mention handler ──────────────────────────────────────────────────────
-
-  const handleNoteInput = (e) => {
-    const val = e.target.value
-    setNoteContent(val)
-    const cursorPos = e.target.selectionStart
-    const before = val.slice(0, cursorPos)
-    const match = before.match(/@(\w*)$/)
-    if (match) {
-      setMentionAnchor({ start: match.index, query: match[1] })
-    } else {
-      setMentionAnchor(null)
-    }
-  }
-
-  const insertMention = (username) => {
-    if (mentionAnchor === null) return
-    const before = noteContent.slice(0, mentionAnchor.start)
-    const after = noteContent.slice(mentionAnchor.start + 1 + mentionAnchor.query.length)
-    setNoteContent(`${before}@${username} ${after}`)
-    setMentionAnchor(null)
-    noteInputRef.current?.focus()
-  }
-
-  const submitNote = () => {
-    const content = noteContent.trim()
-    if (!content) return
-    const qid = noteQid ? parseInt(noteQid, 10) : null
-    postNote.mutate({ content, question_issue_id: qid || null })
-  }
-
-  const filteredMentions = mentionAnchor !== null
-    ? (usersData?.users || []).filter((u) =>
-        u.toLowerCase().startsWith(mentionAnchor.query.toLowerCase()) && u !== currentUser
-      )
-    : []
 
   // ── Misc handlers ─────────────────────────────────────────────────────────
 
@@ -506,129 +443,6 @@ export default function ReportedQuestions() {
               <ChevronsRight size={15} />
             </button>
           </div>
-        </div>
-      </div>
-
-      {/* Chat / Team Notes panel */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-        <h3 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-          <MessageSquare size={16} className="text-orange-500" />
-          Team Notes
-          {(notesData?.total ?? 0) > 0 && (
-            <span className="text-xs text-gray-400 font-normal">{notesData.total} note{notesData.total !== 1 ? 's' : ''}</span>
-          )}
-        </h3>
-
-        {/* Note composer */}
-        <div className="border border-gray-200 rounded-xl overflow-visible mb-5">
-          {/* Top row: Q# link + user pills */}
-          <div className="flex items-center gap-2 px-3 pt-3 pb-2 border-b border-gray-100 flex-wrap">
-            <span className="text-xs text-gray-400 shrink-0">Link to Q#:</span>
-            <input
-              type="number"
-              value={noteQid}
-              onChange={(e) => setNoteQid(e.target.value)}
-              placeholder="optional issue ID"
-              className="w-32 border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-orange-400"
-            />
-            <span className="text-xs text-gray-400 ml-2 shrink-0">Tag users:</span>
-            <div className="flex flex-wrap gap-1">
-              {(usersData?.users || [])
-                .filter((u) => u !== currentUser)
-                .map((u) => (
-                  <button
-                    key={u}
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault()
-                      const mention = `@${u} `
-                      if (!noteContent.includes(mention)) {
-                        setNoteContent((prev) => prev ? `${prev.trimEnd()} ${mention}` : mention)
-                      }
-                      noteInputRef.current?.focus()
-                    }}
-                    className="text-[11px] px-2 py-0.5 rounded-full border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 transition-colors"
-                  >
-                    @{u}
-                  </button>
-                ))}
-            </div>
-          </div>
-
-          {/* Textarea */}
-          <div className="relative">
-            <textarea
-              ref={noteInputRef}
-              value={noteContent}
-              onChange={handleNoteInput}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitNote() }
-                if (e.key === 'Escape') setMentionAnchor(null)
-              }}
-              placeholder="Write a message… type @username to tag someone (Enter to send, Shift+Enter for new line)"
-              rows={3}
-              className="w-full px-3 py-2 text-sm focus:outline-none resize-none pr-12 rounded-b-xl"
-            />
-
-            {/* @mention autocomplete dropdown */}
-            {filteredMentions.length > 0 && (
-              <div className="absolute bottom-full left-3 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[160px]">
-                {filteredMentions.map((u) => (
-                  <button
-                    key={u}
-                    className="block w-full text-left px-3 py-2 text-sm hover:bg-orange-50 hover:text-orange-700 first:rounded-t-lg last:rounded-b-lg transition-colors"
-                    onMouseDown={(e) => { e.preventDefault(); insertMention(u) }}
-                  >
-                    @{u}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <button
-              onClick={submitNote}
-              disabled={!noteContent.trim() || postNote.isPending}
-              title="Send note (Enter)"
-              className="absolute right-3 bottom-3 flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-40"
-            >
-              <Send size={13} />
-              Send
-            </button>
-          </div>
-        </div>
-
-        {/* Notes list */}
-        <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
-          {(notesData?.items || []).length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-6">No notes yet — be the first to write one!</p>
-          )}
-          {(notesData?.items || []).map((note) => (
-            <div key={note.id} className="flex gap-3">
-              <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-700 text-sm font-bold shrink-0">
-                {(note.author[0] || '?').toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  <span className="text-xs font-semibold text-gray-800">{note.author}</span>
-                  <span className="text-xs text-gray-400">
-                    {new Date(note.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                  {note.question_issue_id && (
-                    <span className="text-[10px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded font-medium">
-                      Q#{note.question_issue_id}
-                    </span>
-                  )}
-                </div>
-                <p className="text-sm text-gray-700 mt-0.5 break-words">
-                  {note.content.split(/(@\w+)/g).map((part, i) =>
-                    part.startsWith('@')
-                      ? <span key={i} className="text-orange-600 font-medium">{part}</span>
-                      : part
-                  )}
-                </p>
-              </div>
-            </div>
-          ))}
         </div>
       </div>
 
