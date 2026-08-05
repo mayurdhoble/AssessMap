@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Send, MessageSquare, Trash2 } from 'lucide-react'
+import { Send, MessageSquare, Trash2, AlertTriangle } from 'lucide-react'
 import api from '../api/client'
 
 export default function TeamNotes() {
@@ -10,6 +10,7 @@ export default function TeamNotes() {
   const [mentionAnchor, setMentionAnchor] = useState(null)
   const noteInputRef = useRef(null)
   const currentUser = localStorage.getItem('auth_user') || ''
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
 
   const { data: notesData, isLoading } = useQuery({
     queryKey: ['rq-notes'],
@@ -34,7 +35,10 @@ export default function TeamNotes() {
 
   const deleteNote = useMutation({
     mutationFn: (id) => api.delete(`/v1/reported-questions/notes/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['rq-notes'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['rq-notes'] })
+      setConfirmDeleteId(null)
+    },
   })
 
   const handleNoteInput = (e) => {
@@ -185,7 +189,7 @@ export default function TeamNotes() {
           </div>
         )}
         {notes.map((note) => (
-          <div key={note.id} className="flex gap-4 px-5 py-4 hover:bg-gray-50/60 transition-colors group">
+          <div key={note.id} className="flex gap-4 px-5 py-4 hover:bg-gray-50/60 transition-colors">
             {/* Avatar */}
             <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center text-orange-700 text-sm font-bold shrink-0">
               {(note.author[0] || '?').toUpperCase()}
@@ -193,7 +197,7 @@ export default function TeamNotes() {
 
             {/* Body */}
             <div className="flex-1 min-w-0">
-              <div className="flex items-baseline gap-2 flex-wrap mb-1">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
                 <span className="text-sm font-semibold text-gray-800">{note.author}</span>
                 <span className="text-xs text-gray-400">
                   {new Date(note.created_at).toLocaleString('en-GB', {
@@ -208,9 +212,8 @@ export default function TeamNotes() {
                 )}
                 {note.author === currentUser && (
                   <button
-                    onClick={() => { if (window.confirm('Delete this note?')) deleteNote.mutate(note.id) }}
-                    disabled={deleteNote.isPending}
-                    className="ml-auto opacity-0 group-hover:opacity-100 p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                    onClick={() => setConfirmDeleteId(note.id)}
+                    className="ml-2 p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 border border-red-100 transition-colors"
                     title="Delete note"
                   >
                     <Trash2 size={13} />
@@ -237,6 +240,35 @@ export default function TeamNotes() {
           </div>
         ))}
       </div>
+      {/* Delete confirmation modal */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 w-80 flex flex-col items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center">
+              <AlertTriangle size={22} className="text-red-500" />
+            </div>
+            <div className="text-center">
+              <p className="font-semibold text-gray-800 mb-1">Delete this note?</p>
+              <p className="text-sm text-gray-400">This action cannot be undone.</p>
+            </div>
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteNote.mutate(confirmDeleteId)}
+                disabled={deleteNote.isPending}
+                className="flex-1 px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {deleteNote.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
