@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Send, MessageSquare } from 'lucide-react'
+import { Send, MessageSquare, Trash2 } from 'lucide-react'
 import api from '../api/client'
 
 export default function TeamNotes() {
@@ -30,6 +30,11 @@ export default function TeamNotes() {
       setNoteQid('')
       setMentionAnchor(null)
     },
+  })
+
+  const deleteNote = useMutation({
+    mutationFn: (id) => api.delete(`/v1/reported-questions/notes/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rq-notes'] }),
   })
 
   const handleNoteInput = (e) => {
@@ -180,7 +185,7 @@ export default function TeamNotes() {
           </div>
         )}
         {notes.map((note) => (
-          <div key={note.id} className="flex gap-4 px-5 py-4 hover:bg-gray-50/60 transition-colors">
+          <div key={note.id} className="flex gap-4 px-5 py-4 hover:bg-gray-50/60 transition-colors group">
             {/* Avatar */}
             <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center text-orange-700 text-sm font-bold shrink-0">
               {(note.author[0] || '?').toUpperCase()}
@@ -200,6 +205,16 @@ export default function TeamNotes() {
                   <span className="text-[11px] bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full font-medium border border-orange-100">
                     Q#{note.question_issue_id}
                   </span>
+                )}
+                {note.author === currentUser && (
+                  <button
+                    onClick={() => { if (window.confirm('Delete this note?')) deleteNote.mutate(note.id) }}
+                    disabled={deleteNote.isPending}
+                    className="ml-auto opacity-0 group-hover:opacity-100 p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                    title="Delete note"
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 )}
               </div>
               <p className="text-sm text-gray-700 leading-relaxed break-words">

@@ -429,6 +429,26 @@ def post_note(body: NoteBody, username: str = Depends(require_auth)):
         db.close()
 
 
+@router.delete("/notes/{note_id}")
+def delete_note(note_id: int, username: str = Depends(require_auth)):
+    if not database.SessionLocal:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    from models import RQNote, RQNotification
+    db = database.SessionLocal()
+    try:
+        note = db.query(RQNote).filter(RQNote.id == note_id).first()
+        if not note:
+            raise HTTPException(status_code=404, detail="Note not found")
+        if note.author != username:
+            raise HTTPException(status_code=403, detail="You can only delete your own notes")
+        db.query(RQNotification).filter(RQNotification.note_id == note_id).delete()
+        db.delete(note)
+        db.commit()
+        return {"success": True}
+    finally:
+        db.close()
+
+
 # ── Notifications ─────────────────────────────────────────────────────────────
 
 @router.get("/notifications")
