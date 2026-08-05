@@ -18,7 +18,7 @@ class LoginRequest(BaseModel):
 def _get_users() -> dict:
     """Return {username: password} from env vars USER1..USER4 + ADMIN fallback."""
     users = {}
-    for i in range(1, 5):
+    for i in range(1, 7):
         u = os.getenv(f"USER{i}_USERNAME", "")
         p = os.getenv(f"USER{i}_PASSWORD", "")
         if u and p:
