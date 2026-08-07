@@ -37,24 +37,39 @@ _FETCH_STUCK_TIMEOUT = 600  # auto-reset _rq_fetching after 10 min
 
 
 def _fetch_in_background():
-    """Fetch RQ data from MSSQL in a background thread — never blocks HTTP requests."""
+    """Fetch RQ data from MSSQL in a background thread — retries up to 3 times on connection errors."""
     global _rq_cache, _rq_last_synced, _rq_last_error, _rq_fetching, _rq_fetch_started
+    import time
+    import traceback
     from services import mssql_service
+
+    MAX_ATTEMPTS = 3
+    RETRY_DELAY = 30  # seconds between retries
+
     print("[RQ] ========== Background fetch STARTING ==========")
-    try:
-        print("[RQ] Calling mssql_service.fetch_reported_questions()...")
-        rows = mssql_service.fetch_reported_questions()
-        print(f"[RQ] Query returned {len(rows)} rows — writing to cache...")
-        _rq_cache = rows
-        _rq_last_synced = datetime.utcnow()
-        _rq_last_error = None
-        print(f"[RQ] ========== Background fetch COMPLETE: {len(rows)} rows ==========")
-    except Exception as e:
-        import traceback
-        _rq_last_error = str(e)
-        print(f"[RQ] ========== Background fetch FAILED ==========")
-        print(f"[RQ] Error: {e}")
-        print(f"[RQ] Traceback:\n{traceback.format_exc()}")
+    last_error = None
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            if attempt > 1:
+                print(f"[RQ] Retry attempt {attempt}/{MAX_ATTEMPTS} after {RETRY_DELAY}s delay...")
+                time.sleep(RETRY_DELAY)
+            print(f"[RQ] Calling fetch_reported_questions() (attempt {attempt})...")
+            rows = mssql_service.fetch_reported_questions()
+            print(f"[RQ] Query returned {len(rows)} rows — writing to cache...")
+            _rq_cache = rows
+            _rq_last_synced = datetime.utcnow()
+            _rq_last_error = None
+            print(f"[RQ] ========== Background fetch COMPLETE: {len(rows)} rows ==========")
+            last_error = None
+            break
+        except Exception as e:
+            last_error = e
+            print(f"[RQ] Attempt {attempt} FAILED: {e}")
+            if attempt == MAX_ATTEMPTS:
+                print(f"[RQ] ========== Background fetch FAILED after {MAX_ATTEMPTS} attempts ==========")
+                print(f"[RQ] Traceback:\n{traceback.format_exc()}")
+                _rq_last_error = str(e)
     finally:
         _rq_fetching = False
         _rq_fetch_started = None

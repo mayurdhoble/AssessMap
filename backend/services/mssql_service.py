@@ -7,7 +7,7 @@ def is_configured() -> bool:
     return bool(os.getenv("DB_HOST"))
 
 
-def _get_conn():
+def _get_conn(timeout=300):
     import pymssql
     return pymssql.connect(
         server=os.getenv("DB_HOST", ""),
@@ -15,7 +15,7 @@ def _get_conn():
         database=os.getenv("DB_NAME", ""),
         user=os.getenv("DB_USER", ""),
         password=os.getenv("DB_PASSWORD", ""),
-        timeout=300,
+        timeout=timeout,
         login_timeout=60,
     )
 
@@ -119,7 +119,8 @@ def fetch_assessments() -> pd.DataFrame:
 def fetch_reported_questions() -> List[dict]:
     if not is_configured():
         raise RuntimeError("MSSQL not configured — DB_HOST env var is missing")
-    with _get_conn() as conn:
+    # Use a longer timeout for this heavy query; fresh connection each retry avoids stale TCP state
+    with _get_conn(timeout=600) as conn:
         cursor = conn.cursor(as_dict=True)
         cursor.execute(_REPORTED_QUESTIONS_SQL)
         return cursor.fetchall()
