@@ -147,8 +147,10 @@ def _apply_filters(items, date_from, date_to, problem_type, skill,
                     continue
             except (ValueError, TypeError):
                 pass
-        if problem_type and item.get("ProblemType") != problem_type:
-            continue
+        if problem_type:
+            types = [t.strip() for t in problem_type.split(",") if t.strip()]
+            if types and item.get("ProblemType") not in types:
+                continue
         if skill and item.get("Category") != skill:
             continue
         if candidate_email and candidate_email.lower() not in (item.get("ReportedByCandidate") or "").lower():

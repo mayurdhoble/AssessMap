@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import {
@@ -7,7 +7,7 @@ import {
 } from 'recharts'
 import {
   Download, CheckCircle, Clock, AlertCircle, BarChart2, X, ExternalLink,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UserCheck,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UserCheck, ChevronDown,
 } from 'lucide-react'
 import KPICard from '../components/KPICard'
 import api from '../api/client'
@@ -26,7 +26,7 @@ const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent })
 }
 
 const EMPTY = {
-  dateFrom: '', dateTo: '', problemType: '', skill: '',
+  dateFrom: '', dateTo: '', problemTypes: [], skill: '',
   candidateEmail: '', recruiterEmail: '', questionId: '', status: 'all',
 }
 
@@ -34,13 +34,77 @@ const toParams = (f) => {
   const p = {}
   if (f.dateFrom) p.date_from = f.dateFrom
   if (f.dateTo) p.date_to = f.dateTo
-  if (f.problemType) p.problem_type = f.problemType
+  if (f.problemTypes?.length) p.problem_type = f.problemTypes.join(',')
   if (f.skill) p.skill = f.skill
   if (f.candidateEmail) p.candidate_email = f.candidateEmail
   if (f.recruiterEmail) p.recruiter_email = f.recruiterEmail
   if (f.questionId) p.question_id = f.questionId
   if (f.status !== 'all') p.status = f.status
   return p
+}
+
+function ProblemTypeMultiSelect({ selected, onChange, options }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const toggle = (type) => {
+    onChange(selected.includes(type) ? selected.filter((t) => t !== type) : [...selected, type])
+  }
+
+  const label = selected.length === 0
+    ? 'All Types'
+    : selected.length === 1
+    ? selected[0]
+    : `${selected.length} types selected`
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-orange-400 text-left"
+      >
+        <span className={selected.length ? 'text-gray-800' : 'text-gray-400'} title={selected.join(', ')}>
+          {label}
+        </span>
+        <ChevronDown size={14} className={`text-gray-400 transition-transform shrink-0 ml-1 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-30 top-full left-0 mt-1 w-full min-w-[220px] bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+          {selected.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="w-full text-left px-3 py-2 text-xs text-orange-600 hover:bg-orange-50 border-b border-gray-100 font-medium"
+            >
+              Clear all ({selected.length})
+            </button>
+          )}
+          {options.map((type) => (
+            <label key={type} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={selected.includes(type)}
+                onChange={() => toggle(type)}
+                className="accent-orange-500 w-3.5 h-3.5 shrink-0"
+              />
+              <span className="leading-snug">{type}</span>
+            </label>
+          ))}
+          {options.length === 0 && (
+            <p className="px-3 py-3 text-xs text-gray-400">No options available</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function ReportedQuestions() {
@@ -196,11 +260,11 @@ export default function ReportedQuestions() {
           ))}
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Problem Type</label>
-            <select value={draft.problemType} onChange={set('problemType')}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400">
-              <option value="">All Types</option>
-              {options?.problem_types?.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
+            <ProblemTypeMultiSelect
+              selected={draft.problemTypes}
+              onChange={(val) => setDraft((p) => ({ ...p, problemTypes: val }))}
+              options={options?.problem_types || []}
+            />
           </div>
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Status</label>
