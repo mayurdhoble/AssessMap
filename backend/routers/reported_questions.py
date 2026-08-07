@@ -1,6 +1,6 @@
 import io
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
@@ -9,6 +9,7 @@ import pandas as pd
 from pydantic import BaseModel
 from routers.auth import require_auth
 import database
+from services import pg_rq_service
 
 
 class IssueFoundBody(BaseModel):
@@ -26,167 +27,70 @@ class NoteBody(BaseModel):
 
 router = APIRouter(prefix="/api/v1/reported-questions", tags=["reported-questions"])
 
-# ── In-memory cache (refreshed from MSSQL every 10 min or on Sync Now) ────────
-_rq_cache: Optional[List[dict]] = None
-_rq_last_synced: Optional[datetime] = None
+# ── Background fetch state (prevents duplicate concurrent fetches) ─────────────
+_rq_fetching: bool = False
+_rq_fetch_started: Optional[datetime] = None
 _rq_last_error: Optional[str] = None
-_rq_fetching: bool = False  # True while background fetch is running
-_rq_fetch_started: Optional[datetime] = None  # when the current fetch began
-_CACHE_TTL = 600  # seconds
-_FETCH_STUCK_TIMEOUT = 600  # auto-reset _rq_fetching after 10 min
+_FETCH_STUCK_TIMEOUT = 900  # 15 min — auto-reset if stuck
 
 
 def _fetch_in_background():
-    """Fetch RQ data from MSSQL in a background thread — retries up to 3 times on connection errors."""
-    global _rq_cache, _rq_last_synced, _rq_last_error, _rq_fetching, _rq_fetch_started
+    """Fetch from MSSQL, bulk-load into PostgreSQL. Retries up to 3 times."""
+    global _rq_fetching, _rq_fetch_started, _rq_last_error
     import time
     import traceback
     from services import mssql_service
 
     MAX_ATTEMPTS = 3
-    RETRY_DELAY = 30  # seconds between retries
+    RETRY_DELAY = 30
 
     print("[RQ] ========== Background fetch STARTING ==========")
-    last_error = None
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             if attempt > 1:
-                print(f"[RQ] Retry attempt {attempt}/{MAX_ATTEMPTS} after {RETRY_DELAY}s delay...")
+                print(f"[RQ] Retry {attempt}/{MAX_ATTEMPTS} after {RETRY_DELAY}s...")
                 time.sleep(RETRY_DELAY)
-            print(f"[RQ] Calling fetch_reported_questions() (attempt {attempt})...")
+            print(f"[RQ] Fetching from MSSQL (attempt {attempt})...")
             rows = mssql_service.fetch_reported_questions()
-            print(f"[RQ] Query returned {len(rows)} rows — writing to cache...")
-            _rq_cache = rows
-            _rq_last_synced = datetime.utcnow()
+            print(f"[RQ] Got {len(rows)} rows — loading into PostgreSQL...")
+            count = pg_rq_service.bulk_load(rows)
             _rq_last_error = None
-            print(f"[RQ] ========== Background fetch COMPLETE: {len(rows)} rows ==========")
-            last_error = None
+            print(f"[RQ] ========== Fetch COMPLETE: {count} rows in PostgreSQL ==========")
             break
         except Exception as e:
-            last_error = e
+            _rq_last_error = str(e)
             print(f"[RQ] Attempt {attempt} FAILED: {e}")
             if attempt == MAX_ATTEMPTS:
-                print(f"[RQ] ========== Background fetch FAILED after {MAX_ATTEMPTS} attempts ==========")
-                print(f"[RQ] Traceback:\n{traceback.format_exc()}")
-                _rq_last_error = str(e)
-    finally:
-        _rq_fetching = False
-        _rq_fetch_started = None
-        print(f"[RQ] _rq_fetching reset to False")
+                print(f"[RQ] ========== Fetch FAILED after {MAX_ATTEMPTS} attempts ==========")
+                print(traceback.format_exc())
+    _rq_fetching = False
+    _rq_fetch_started = None
+    print("[RQ] _rq_fetching reset to False")
 
 
 def _trigger_fetch():
     """Start a background fetch if one is not already running."""
     global _rq_fetching, _rq_fetch_started
     now = datetime.utcnow()
-    # Auto-reset if stuck for longer than the timeout
     if _rq_fetching and _rq_fetch_started:
         elapsed = (now - _rq_fetch_started).total_seconds()
         if elapsed > _FETCH_STUCK_TIMEOUT:
-            print(f"[RQ] Fetch has been stuck for {int(elapsed)}s — force-resetting flag")
+            print(f"[RQ] Fetch stuck for {int(elapsed)}s — force-resetting flag")
             _rq_fetching = False
             _rq_fetch_started = None
     if _rq_fetching:
-        elapsed = int((now - _rq_fetch_started).total_seconds()) if _rq_fetch_started else '?'
-        print(f"[RQ] Fetch already in progress ({elapsed}s elapsed) — skipping duplicate trigger")
+        elapsed = int((now - _rq_fetch_started).total_seconds()) if _rq_fetch_started else "?"
+        print(f"[RQ] Fetch already in progress ({elapsed}s elapsed) — skipping")
         return False
     _rq_fetching = True
     _rq_fetch_started = now
-    print("[RQ] Starting background thread for fetch...")
+    print("[RQ] Starting background fetch thread...")
     threading.Thread(target=_fetch_in_background, daemon=True).start()
     return True
 
 
-def _get_rq_data() -> List[dict]:
-    """Return cached data immediately. Triggers a background refresh if stale."""
-    from services import mssql_service
-    if not mssql_service.is_configured():
-        print("[RQ] MSSQL not configured — skipping")
-        return []
-    now = datetime.utcnow()
-    is_stale = (
-        _rq_cache is None
-        or _rq_last_synced is None
-        or (now - _rq_last_synced).total_seconds() > _CACHE_TTL
-    )
-    if is_stale and not _rq_fetching:
-        print(f"[RQ] Cache stale (rows={len(_rq_cache) if _rq_cache else 0}, last_synced={_rq_last_synced}) — triggering fetch")
-        _trigger_fetch()
-    return _rq_cache or []
-
-
-def _serialize(item: dict) -> dict:
-    reported_on = item.get("ReportedOn")
-    if isinstance(reported_on, datetime):
-        reported_on = reported_on.isoformat()
-    return {
-        "id": item.get("QuestionIssueId"),
-        "question_issue_id": item.get("QuestionIssueId"),
-        "reported_on": reported_on,
-        "candidate_email": item.get("ReportedByCandidate") or "",
-        "recruiter_email": item.get("InvitedBy") or "",
-        "test_id": item.get("TestId"),
-        "test_name": item.get("TestName") or "",
-        "qb_id": item.get("QBId"),
-        "qb_name": item.get("QBName"),
-        "question_id": item.get("QuestionId"),
-        "question": item.get("Question"),
-        "author": item.get("Author"),
-        "skill": item.get("Category"),
-        "que_type": item.get("QueType"),
-        "problem_type": item.get("ProblemType"),
-        "issue_status": item.get("IssueStatus") or "Pending",
-        "resolved": item.get("IssueStatus") == "Resolved",
-        "comment": item.get("Comment"),
-        "reported_qb": item.get("ReportedQB"),
-        "test_invitation_id": item.get("TestInvitationID"),
-    }
-
-
-def _apply_filters(items, date_from, date_to, problem_type, skill,
-                   candidate_email, recruiter_email, question_id, status):
-    result = []
-    for item in items:
-        ro = item.get("ReportedOn")
-        if date_from:
-            try:
-                if ro and ro < datetime.fromisoformat(date_from):
-                    continue
-            except (ValueError, TypeError):
-                pass
-        if date_to:
-            try:
-                cutoff = datetime.fromisoformat(date_to) + timedelta(days=1)
-                if ro and ro >= cutoff:
-                    continue
-            except (ValueError, TypeError):
-                pass
-        if problem_type:
-            types = [t.strip() for t in problem_type.split(",") if t.strip()]
-            if types and item.get("ProblemType") not in types:
-                continue
-        if skill and item.get("Category") != skill:
-            continue
-        if candidate_email and candidate_email.lower() not in (item.get("ReportedByCandidate") or "").lower():
-            continue
-        if recruiter_email and recruiter_email.lower() not in (item.get("InvitedBy") or "").lower():
-            continue
-        if question_id:
-            try:
-                if item.get("QuestionId") != int(question_id):
-                    continue
-            except (ValueError, TypeError):
-                pass
-        if status == "resolved" and item.get("IssueStatus") != "Resolved":
-            continue
-        elif status == "pending" and item.get("IssueStatus") == "Resolved":
-            continue
-        result.append(item)
-    return result
-
-
-# ── Sync Now (force cache refresh) ───────────────────────────────────────────
+# ── Sync Now ──────────────────────────────────────────────────────────────────
 
 @router.post("/sync")
 def sync_now(_: str = Depends(require_auth)):
@@ -194,33 +98,32 @@ def sync_now(_: str = Depends(require_auth)):
     if not mssql_service.is_configured():
         raise HTTPException(status_code=503, detail="MSSQL not configured")
     started = _trigger_fetch()
+    info = pg_rq_service.get_info()
     return {
         "success": True,
         "fetching": _rq_fetching,
         "started_new": started,
-        "current_rows": len(_rq_cache) if _rq_cache else 0,
-        "last_synced": _rq_last_synced.isoformat() if _rq_last_synced else None,
+        "current_rows": info.get("rows", 0),
+        "last_synced": info.get("last_synced"),
         "last_error": _rq_last_error,
     }
 
 
-# ── Sync status ───────────────────────────────────────────────────────────────
-
 @router.get("/sync-status")
 def sync_status(_: str = Depends(require_auth)):
     from services import mssql_service
+    info = pg_rq_service.get_info()
     return {
         "sync_mode": mssql_service.is_configured(),
         "fetching": _rq_fetching,
-        "last_synced": _rq_last_synced.isoformat() if _rq_last_synced else None,
-        "rows": len(_rq_cache) if _rq_cache is not None else 0,
+        "last_synced": info.get("last_synced"),
+        "rows": info.get("rows", 0),
         "last_error": _rq_last_error,
     }
 
 
 @router.post("/reset-fetch")
 def reset_fetch(_: str = Depends(require_auth)):
-    """Force-reset the _rq_fetching flag if it got stuck."""
     global _rq_fetching, _rq_fetch_started
     was_fetching = _rq_fetching
     _rq_fetching = False
@@ -231,14 +134,13 @@ def reset_fetch(_: str = Depends(require_auth)):
 
 @router.get("/debug")
 def debug_state(_: str = Depends(require_auth)):
-    """Show cache state and last error — for debugging."""
     from services import mssql_service
+    info = pg_rq_service.get_info()
     return {
         "mssql_configured": mssql_service.is_configured(),
-        "cache_rows": len(_rq_cache) if _rq_cache is not None else None,
-        "last_synced": _rq_last_synced.isoformat() if _rq_last_synced else None,
+        "pg_rows": info.get("rows"),
+        "last_synced": info.get("last_synced"),
         "last_error": _rq_last_error,
-        "sample": _rq_cache[:2] if _rq_cache else [],
     }
 
 
@@ -535,12 +437,7 @@ def mark_all_read(username: str = Depends(require_auth)):
 
 @router.get("/filter-options")
 def filter_options(_: str = Depends(require_auth)):
-    items = _get_rq_data()
-    return {
-        "problem_types": sorted(set(i.get("ProblemType") for i in items if i.get("ProblemType"))),
-        "skills": sorted(set(i.get("Category") for i in items if i.get("Category"))),
-        "que_types": sorted(set(i.get("QueType") for i in items if i.get("QueType"))),
-    }
+    return pg_rq_service.query_filter_options()
 
 
 # ── Analytics ─────────────────────────────────────────────────────────────────
@@ -557,36 +454,10 @@ def analytics(
     status: Optional[str] = "all",
     _: str = Depends(require_auth),
 ):
-    items = _apply_filters(
-        _get_rq_data(), date_from, date_to, problem_type,
-        skill, candidate_email, recruiter_email, question_id, status,
+    return pg_rq_service.query_analytics(
+        date_from, date_to, problem_type, skill,
+        candidate_email, recruiter_email, question_id, status,
     )
-    total = len(items)
-    resolved = sum(1 for i in items if i.get("IssueStatus") == "Resolved")
-    pending = total - resolved
-
-    by_type: dict = {}
-    for i in items:
-        pt = i.get("ProblemType") or "Other"
-        if pt not in by_type:
-            by_type[pt] = {"name": pt, "total": 0, "resolved": 0}
-        by_type[pt]["total"] += 1
-        if i.get("IssueStatus") == "Resolved":
-            by_type[pt]["resolved"] += 1
-
-    by_skill: dict = {}
-    for i in items:
-        s = i.get("Category") or "Unknown"
-        by_skill[s] = by_skill.get(s, 0) + 1
-
-    return {
-        "total": total,
-        "resolved": resolved,
-        "pending": pending,
-        "resolution_rate": round(resolved / total * 100, 1) if total > 0 else 0,
-        "by_problem_type": sorted(by_type.values(), key=lambda x: -x["total"]),
-        "top_skills": [{"skill": k, "count": v} for k, v in sorted(by_skill.items(), key=lambda x: -x[1])[:10]],
-    }
 
 
 # ── Export ────────────────────────────────────────────────────────────────────
@@ -603,41 +474,40 @@ def export_excel(
     status: Optional[str] = "all",
     username: str = Depends(require_auth),
 ):
-    # Only export rows this user has personally marked as resolved
+    # Only export rows this user personally marked as resolved
     actions = _load_actions()
     issue_found_map = _load_issue_found()
     remarks_map = _load_remarks()
-    my_ids = {qid for qid, a in actions.items() if a["by"] == username}
+    my_ids = [qid for qid, a in actions.items() if a["by"] == username]
 
-    all_items = _apply_filters(
-        _get_rq_data(), date_from, date_to, problem_type,
-        skill, candidate_email, recruiter_email, question_id, status,
+    items = pg_rq_service.query_export(
+        date_from, date_to, problem_type, skill,
+        candidate_email, recruiter_email, question_id, status,
+        question_issue_ids=my_ids,
     )
-    items = [i for i in all_items if i.get("QuestionIssueId") in my_ids]
 
-    rows = [{
-        "Issue ID": i.get("QuestionIssueId"),
-        "Reported On": i["ReportedOn"].strftime("%d-%b-%Y %I:%M %p") if isinstance(i.get("ReportedOn"), datetime) else (i.get("ReportedOn") or ""),
-        "Candidate Email": i.get("ReportedByCandidate") or "",
-        "Recruiter Email": i.get("InvitedBy") or "",
-        "Test Name": i.get("TestName") or "",
-        "QB Name": i.get("QBName") or "",
-        "Skill": i.get("Category") or "",
-        "Question ID": i.get("QuestionId") or "",
-        "Question Type": i.get("QueType") or "",
-        "Author": i.get("Author") or "",
-        "Problem Type": i.get("ProblemType") or "",
-        "Comment": i.get("Comment") or "",
-        "Status": i.get("IssueStatus") or "",
-        "Issue Found": issue_found_map.get(i.get("QuestionIssueId"), {}).get("value") or "",
-        "Remark": remarks_map.get(i.get("QuestionIssueId"), {}).get("remark") or "",
-        "Reported QB": i.get("ReportedQB") or "",
-        "Resolved By": username,
-        "Resolved At": actions[i.get("QuestionIssueId")]["at"].strftime("%d-%b-%Y %I:%M %p") if actions.get(i.get("QuestionIssueId"), {}).get("at") else "",
+    export_rows = [{
+        "Issue ID":       i["question_issue_id"],
+        "Reported On":    i["reported_on"] or "",
+        "Candidate Email":i["candidate_email"] or "",
+        "Recruiter Email":i["recruiter_email"] or "",
+        "QB Name":        i["qb_name"] or "",
+        "Skill":          i["skill"] or "",
+        "Question ID":    i["question_id"] or "",
+        "Question Type":  i["que_type"] or "",
+        "Author":         i["author"] or "",
+        "Problem Type":   i["problem_type"] or "",
+        "Comment":        i["comment"] or "",
+        "Status":         i["issue_status"] or "",
+        "Issue Found":    issue_found_map.get(i["question_issue_id"], {}).get("value") or "",
+        "Remark":         remarks_map.get(i["question_issue_id"], {}).get("remark") or "",
+        "Reported QB":    i["reported_qb"] or "",
+        "Resolved By":    username,
+        "Resolved At":    actions.get(i["question_issue_id"], {}).get("at", ""),
     } for i in items]
 
     buf = io.BytesIO()
-    pd.DataFrame(rows).to_excel(buf, index=False)
+    pd.DataFrame(export_rows).to_excel(buf, index=False)
     buf.seek(0)
     return StreamingResponse(
         buf,
@@ -662,36 +532,25 @@ def list_issues(
     limit: int = Query(50, ge=1, le=200),
     _: str = Depends(require_auth),
 ):
-    filtered = _apply_filters(
-        _get_rq_data(), date_from, date_to, problem_type,
-        skill, candidate_email, recruiter_email, question_id, status,
+    result = pg_rq_service.query_list(
+        date_from, date_to, problem_type, skill,
+        candidate_email, recruiter_email, question_id, status, page, limit,
     )
-    filtered.sort(key=lambda x: x.get("ReportedOn") or datetime.min, reverse=True)
-    total = len(filtered)
-    start = (page - 1) * limit
-    page_items = filtered[start: start + limit]
 
     actions = _load_actions()
     issue_found_map = _load_issue_found()
     remarks_map = _load_remarks()
 
-    def _serialize_with_action(item):
-        s = _serialize(item)
-        qid = item.get("QuestionIssueId")
+    for item in result["items"]:
+        qid = item["question_issue_id"]
         action = actions.get(qid)
-        s["marked_by"] = action["by"] if action else None
-        s["marked_at"] = action["at"].isoformat() if action and action["at"] else None
+        item["marked_by"]      = action["by"] if action else None
+        item["marked_at"]      = action["at"].isoformat() if action and action["at"] else None
         ifound = issue_found_map.get(qid)
-        s["issue_found"] = ifound["value"] if ifound else None
-        s["issue_found_by"] = ifound["set_by"] if ifound else None
+        item["issue_found"]    = ifound["value"] if ifound else None
+        item["issue_found_by"] = ifound["set_by"] if ifound else None
         rem = remarks_map.get(qid)
-        s["remark"] = rem["remark"] if rem else None
-        s["remarked_by"] = rem["remarked_by"] if rem else None
-        return s
+        item["remark"]         = rem["remark"] if rem else None
+        item["remarked_by"]    = rem["remarked_by"] if rem else None
 
-    return {
-        "total": total,
-        "page": page,
-        "pages": max(1, (total + limit - 1) // limit),
-        "items": [_serialize_with_action(i) for i in page_items],
-    }
+    return result

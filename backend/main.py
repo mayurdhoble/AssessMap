@@ -28,6 +28,13 @@ def _sync_assessments():
         print(f"[Scheduler] Assessment sync failed: {e}")
 
 
+def _sync_rq():
+    """Fetch reported questions from MSSQL and store in Railway PostgreSQL."""
+    from routers.reported_questions import _trigger_fetch
+    print("[Scheduler] RQ sync starting...")
+    _trigger_fetch()
+
+
 # ── App lifespan ──────────────────────────────────────────────────────────────
 
 @asynccontextmanager
@@ -35,53 +42,48 @@ async def lifespan(app: FastAPI):
     # Create PostgreSQL tables if they don't exist
     if database.engine:
         models.Base.metadata.create_all(bind=database.engine)
+        database.create_rq_tables()
         print("[Startup] PostgreSQL tables ready")
     else:
         print("[Startup] DATABASE_URL not set — skipping DB init")
 
-    # Report current data state
-    from services import pg_service
-    info = pg_service.get_info()
-    if info.get("loaded"):
-        print(f"[Startup] PostgreSQL has {info['rows']:,} assessment rows (last sync: {info.get('uploaded_at', 'unknown')})")
+    # Assessment data state
+    from services import pg_service, pg_rq_service
+    assess_info = pg_service.get_info()
+    if assess_info.get("loaded"):
+        print(f"[Startup] PostgreSQL has {assess_info['rows']:,} assessment rows (last sync: {assess_info.get('uploaded_at', 'unknown')})")
     else:
         print("[Startup] No assessment data in PostgreSQL — waiting for first sync")
 
+    # RQ data state
+    rq_info = pg_rq_service.get_info()
+    if rq_info.get("loaded"):
+        print(f"[Startup] PostgreSQL has {rq_info['rows']:,} RQ rows (last sync: {rq_info.get('last_synced', 'unknown')})")
+    else:
+        print("[Startup] No RQ data in PostgreSQL — will sync immediately")
+
     scheduler = None
+    import threading
     from services import mssql_service
     if mssql_service.is_configured():
         from apscheduler.schedulers.background import BackgroundScheduler
         scheduler = BackgroundScheduler()
 
-        # Midnight sync — assessments refreshed once per day
-        scheduler.add_job(
-            _sync_assessments,
-            "cron",
-            hour=0,
-            minute=0,
-            id="sync_assessments_midnight",
-        )
+        # Midnight sync — assessments at 00:00, RQ at 00:05
+        scheduler.add_job(_sync_assessments, "cron", hour=0, minute=0,  id="sync_assessments_midnight")
+        scheduler.add_job(_sync_rq,          "cron", hour=0, minute=5,  id="sync_rq_midnight")
 
-        # If PostgreSQL has no data yet, do a one-time immediate sync
-        # (tables are already created above, so COPY is safe to run now)
-        if not info.get("loaded"):
-            import threading
-            print("[Startup] PostgreSQL empty — triggering one-time immediate sync...")
+        # One-time immediate sync if PostgreSQL is empty
+        if not assess_info.get("loaded"):
+            print("[Startup] Assessment table empty — triggering one-time immediate sync...")
             threading.Thread(target=_sync_assessments, daemon=True).start()
 
-        scheduler.start()
-        print("[Startup] MSSQL scheduler started (midnight daily sync)")
+        if not rq_info.get("loaded"):
+            print("[Startup] RQ table empty — triggering immediate RQ sync...")
+            threading.Thread(target=_sync_rq, daemon=True).start()
 
-        # Trigger RQ background fetch 3 min after startup
-        from routers.reported_questions import _trigger_fetch as rq_trigger
-        import threading as _threading
-        def _delayed_rq():
-            import time
-            print("[Startup] RQ fetch scheduled — waiting 180s...")
-            time.sleep(180)
-            print("[Startup] Triggering RQ background fetch...")
-            rq_trigger()
-        _threading.Thread(target=_delayed_rq, daemon=True).start()
+        scheduler.start()
+        print("[Startup] MSSQL scheduler started (assessments 00:00, RQ 00:05 daily)")
     else:
         print("[Startup] DB_HOST not set — MSSQL scheduler disabled")
 
