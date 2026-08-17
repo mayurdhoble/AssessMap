@@ -452,11 +452,12 @@ def analytics(
     recruiter_email: Optional[str] = None,
     question_id: Optional[str] = None,
     status: Optional[str] = "all",
+    reported_qb: Optional[str] = None,
     _: str = Depends(require_auth),
 ):
     return pg_rq_service.query_analytics(
         date_from, date_to, problem_type, skill,
-        candidate_email, recruiter_email, question_id, status,
+        candidate_email, recruiter_email, question_id, status, reported_qb,
     )
 
 
@@ -472,6 +473,7 @@ def export_excel(
     recruiter_email: Optional[str] = None,
     question_id: Optional[str] = None,
     status: Optional[str] = "all",
+    reported_qb: Optional[str] = None,
     username: str = Depends(require_auth),
 ):
     # Only export rows this user personally marked as resolved
@@ -482,7 +484,7 @@ def export_excel(
 
     items = pg_rq_service.query_export(
         date_from, date_to, problem_type, skill,
-        candidate_email, recruiter_email, question_id, status,
+        candidate_email, recruiter_email, question_id, status, reported_qb,
         question_issue_ids=my_ids,
     )
 
@@ -528,13 +530,14 @@ def list_issues(
     recruiter_email: Optional[str] = None,
     question_id: Optional[str] = None,
     status: Optional[str] = "all",
+    reported_qb: Optional[str] = None,
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     _: str = Depends(require_auth),
 ):
     result = pg_rq_service.query_list(
         date_from, date_to, problem_type, skill,
-        candidate_email, recruiter_email, question_id, status, page, limit,
+        candidate_email, recruiter_email, question_id, status, page, limit, reported_qb,
     )
 
     actions = _load_actions()

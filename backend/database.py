@@ -37,11 +37,13 @@ def create_rq_tables():
                 test_invitation_id    INTEGER,
                 reported_by_candidate TEXT,
                 invited_by            TEXT,
+                test_id               INTEGER,
+                test_name             TEXT,
+                qb_id                 INTEGER,
+                qb_name               TEXT,
                 question_id           INTEGER,
                 question              TEXT,
                 author                TEXT,
-                qb_id                 INTEGER,
-                qb_name               TEXT,
                 category              TEXT,
                 que_type              TEXT,
                 problem_type          TEXT,
@@ -50,6 +52,12 @@ def create_rq_tables():
                 reported_qb           TEXT
             )
         """))
+        # Add new columns to existing tables (idempotent)
+        for col_sql in [
+            "ALTER TABLE rq_data ADD COLUMN IF NOT EXISTS test_id INTEGER",
+            "ALTER TABLE rq_data ADD COLUMN IF NOT EXISTS test_name TEXT",
+        ]:
+            conn.execute(text(col_sql))
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS rq_sync_meta (
                 id          SERIAL PRIMARY KEY,

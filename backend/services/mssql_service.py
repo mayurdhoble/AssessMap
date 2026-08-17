@@ -68,17 +68,17 @@ WHERE
 _REPORTED_QUESTIONS_SQL = """
 SELECT
     qim.QuestionIssueId,
-    qim.CreatedOn                              AS ReportedOn,
-    ti.TestInvitationID,
-    ti.CandidateEmail                          AS ReportedByCandidate,
-    uinby.Email                                AS InvitedBy,
-    qim.QuestionId,
-    qm.Question,
-    qm.Author,
+    qim.CreatedOn                                   AS ReportedOn,
+    ISNULL(uinby.Email, uctl.Email)                 AS InvitedBy,
+    ti.CandidateEmail                               AS ReportedByCandidate,
+    ct.TestId,
+    ct.TestName,
     qb.QBId,
     qb.QBName,
-    cm.Category,
+    qm.QueId                                        AS QuestionId,
+    qm.Question,
     qtm.QueType,
+    ti.TestInvitationID,
     CASE
         WHEN qim.IssueTypeId = 1 THEN 'Question has grammatical errors'
         WHEN qim.IssueTypeId = 2 THEN 'Spelling mistakes in the question'
@@ -87,22 +87,25 @@ SELECT
         WHEN qim.IssueTypeId = 5 THEN 'Answer options are irrelevant'
         WHEN qim.IssueTypeId = 6 THEN 'It''s difficult to comprehend the question'
         WHEN qim.IssueTypeId = 7 THEN 'Other'
-    END                                        AS ProblemType,
+    END                                             AS ProblemType,
     CASE
         WHEN qim.IssueStatus = 0 THEN 'Pending'
         WHEN qim.IssueStatus = 1 THEN 'Inprogress'
         WHEN qim.IssueStatus = 2 THEN 'Resolved'
-    END                                        AS IssueStatus,
+    END                                             AS IssueStatus,
     qim.Comment,
-    CASE WHEN qb.CustomerId = 310 THEN 'Issue from RTU QB' ELSE 'Issue from Customer QB' END AS ReportedQB
-FROM QuestionIssueMaster   qim  WITH (NOLOCK)
-JOIN TestInvitaions        ti   WITH (NOLOCK) ON ti.TestInvitationID = qim.TestInvitationId
-JOIN QuestionMasters       qm   WITH (NOLOCK) ON qm.QueId            = qim.QuestionId
-JOIN QuestionBankMaster    qb   WITH (NOLOCK) ON qb.QBId             = qm.QBId
-JOIN CategoryMaster        cm   WITH (NOLOCK) ON cm.CategoryId       = qb.CategoryId
-LEFT JOIN UserMaster       uinby WITH (NOLOCK) ON uinby.UserId       = ti.InvitedBy
-LEFT JOIN QuestionTypeMaster qtm WITH (NOLOCK) ON qtm.QueTypeId      = qm.QueTypeId
-WHERE qim.CreatedOn >= '2026-01-01'
+    CASE WHEN qb.CustomerId = 310 THEN 'Issue from RTU QB'
+         ELSE 'Issue from Customer QB'
+    END                                             AS ReportedQB
+FROM CustTest ct
+JOIN TestInvitaions        ti   ON ct.TestId        = ti.TestID
+JOIN CustTestLinks         ctl  ON ctl.TestLinkId   = ti.TestLinkId
+JOIN QuestionIssueMaster   qim  ON qim.TestInvitationId = ti.TestInvitationID
+JOIN QuestionMasters       qm   ON qm.QueId         = qim.QuestionId
+JOIN QuestionBankMaster    qb   ON qb.QBId          = qm.QBId
+LEFT JOIN UserMaster       uctl ON uctl.UserId      = ctl.userId
+LEFT JOIN UserMaster       uinby ON uinby.UserId    = ti.InvitedBy
+LEFT JOIN QuestionTypeMaster qtm ON qtm.QueTypeId   = qm.QueTypeId
 """
 
 

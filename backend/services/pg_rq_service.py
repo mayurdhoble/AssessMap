@@ -17,12 +17,12 @@ _MSSQL_TO_DB = {
     "TestInvitationID":     "test_invitation_id",
     "ReportedByCandidate":  "reported_by_candidate",
     "InvitedBy":            "invited_by",
-    "QuestionId":           "question_id",
-    "Question":             "question",
-    "Author":               "author",
+    "TestId":               "test_id",
+    "TestName":             "test_name",
     "QBId":                 "qb_id",
     "QBName":               "qb_name",
-    "Category":             "category",
+    "QuestionId":           "question_id",
+    "Question":             "question",
     "QueType":              "que_type",
     "ProblemType":          "problem_type",
     "IssueStatus":          "issue_status",
@@ -62,6 +62,7 @@ def _where(
     recruiter_email: Optional[str] = None,
     question_id: Optional[str] = None,
     status: Optional[str] = "all",
+    reported_qb: Optional[str] = None,   # comma-separated, e.g. "Issue from RTU QB,Issue from Customer QB"
 ):
     clauses, params = [], {}
 
@@ -104,6 +105,13 @@ def _where(
     elif status == "pending":
         clauses.append("issue_status != 'Resolved'")
 
+    if reported_qb:
+        qbs = [q.strip() for q in reported_qb.split(",") if q.strip()]
+        if qbs:
+            ph = ", ".join(f":rqb{i}" for i in range(len(qbs)))
+            clauses.append(f"reported_qb IN ({ph})")
+            params.update({f"rqb{i}": q for i, q in enumerate(qbs)})
+
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     return where, params
 
@@ -134,13 +142,15 @@ def bulk_load(rows: List[dict]) -> int:
     df = df[_DB_COLS].copy()
 
     # Coerce types
-    for int_col in ["question_issue_id", "test_invitation_id", "question_id", "qb_id"]:
-        df[int_col] = pd.to_numeric(df[int_col], errors="coerce").fillna(0).astype(int)
+    for int_col in ["question_issue_id", "test_invitation_id", "question_id", "qb_id", "test_id"]:
+        if int_col in df.columns:
+            df[int_col] = pd.to_numeric(df[int_col], errors="coerce").fillna(0).astype(int)
     df["reported_on"] = pd.to_datetime(df["reported_on"], errors="coerce")
-    for txt in ["reported_by_candidate", "invited_by", "question", "author",
-                "qb_name", "category", "que_type", "problem_type",
+    for txt in ["reported_by_candidate", "invited_by", "test_name", "qb_name",
+                "question", "que_type", "problem_type",
                 "issue_status", "comment", "reported_qb"]:
-        df[txt] = df[txt].fillna("").astype(str)
+        if txt in df.columns:
+            df[txt] = df[txt].fillna("").astype(str)
 
     # Serialize to CSV for COPY
     buf = io.StringIO()
@@ -193,20 +203,23 @@ def get_info() -> dict:
 def query_filter_options() -> dict:
     import database
     if not database.engine:
-        return {"problem_types": [], "skills": [], "que_types": []}
+        return {"problem_types": [], "skills": [], "que_types": [], "qb_types": []}
     pts = [r["problem_type"] for r in _rows(
         "SELECT DISTINCT problem_type FROM rq_data WHERE problem_type != '' ORDER BY problem_type")]
     skills = [r["category"] for r in _rows(
         "SELECT DISTINCT category FROM rq_data WHERE category != '' ORDER BY category")]
     que_types = [r["que_type"] for r in _rows(
         "SELECT DISTINCT que_type FROM rq_data WHERE que_type != '' ORDER BY que_type")]
-    return {"problem_types": pts, "skills": skills, "que_types": que_types}
+    qb_types = [r["reported_qb"] for r in _rows(
+        "SELECT DISTINCT reported_qb FROM rq_data WHERE reported_qb != '' ORDER BY reported_qb")]
+    return {"problem_types": pts, "skills": skills, "que_types": que_types, "qb_types": qb_types}
 
 
 # ── Analytics ─────────────────────────────────────────────────────────────────
 
 def query_analytics(date_from=None, date_to=None, problem_type=None, skill=None,
-                    candidate_email=None, recruiter_email=None, question_id=None, status="all") -> dict:
+                    candidate_email=None, recruiter_email=None, question_id=None, status="all",
+                    reported_qb=None) -> dict:
     import database
     empty = {"total": 0, "resolved": 0, "pending": 0, "resolution_rate": 0,
              "by_problem_type": [], "top_skills": []}
@@ -214,7 +227,7 @@ def query_analytics(date_from=None, date_to=None, problem_type=None, skill=None,
         return empty
 
     where, params = _where(date_from, date_to, problem_type, skill,
-                           candidate_email, recruiter_email, question_id, status)
+                           candidate_email, recruiter_email, question_id, status, reported_qb)
 
     totals = _one(f"""
         SELECT
@@ -276,20 +289,20 @@ def _to_item(r: dict) -> dict:
         "comment":             r.get("comment"),
         "reported_qb":         r.get("reported_qb"),
         # test_id / test_name not in MSSQL query
-        "test_id":             None,
-        "test_name":           None,
+        "test_id":             int(r.get("test_id") or 0) or None,
+        "test_name":           r.get("test_name") or None,
     }
 
 
 def query_list(date_from=None, date_to=None, problem_type=None, skill=None,
                candidate_email=None, recruiter_email=None, question_id=None,
-               status="all", page=1, limit=50) -> dict:
+               status="all", page=1, limit=50, reported_qb=None) -> dict:
     import database
     if not database.engine:
         return {"total": 0, "page": page, "pages": 1, "items": []}
 
     where, params = _where(date_from, date_to, problem_type, skill,
-                           candidate_email, recruiter_email, question_id, status)
+                           candidate_email, recruiter_email, question_id, status, reported_qb)
 
     count = int((_one(f"SELECT COUNT(*) AS n FROM rq_data {where}", params)).get("n") or 0)
     if count == 0:
@@ -314,14 +327,14 @@ def query_list(date_from=None, date_to=None, problem_type=None, skill=None,
 
 def query_export(date_from=None, date_to=None, problem_type=None, skill=None,
                  candidate_email=None, recruiter_email=None, question_id=None,
-                 status="all", question_issue_ids: Optional[List[int]] = None):
+                 status="all", reported_qb=None, question_issue_ids: Optional[List[int]] = None):
     """Return list of dicts for all matching rows, optionally filtered to specific IDs."""
     import database
     if not database.engine:
         return []
 
     where, params = _where(date_from, date_to, problem_type, skill,
-                           candidate_email, recruiter_email, question_id, status)
+                           candidate_email, recruiter_email, question_id, status, reported_qb)
 
     if question_issue_ids is not None:
         if not question_issue_ids:

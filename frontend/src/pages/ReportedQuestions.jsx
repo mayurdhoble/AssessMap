@@ -28,6 +28,7 @@ const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent })
 const EMPTY = {
   dateFrom: '', dateTo: '', problemTypes: [], skill: '',
   candidateEmail: '', recruiterEmail: '', questionId: '', status: 'all',
+  reportedQb: [],
 }
 
 const toParams = (f) => {
@@ -40,10 +41,11 @@ const toParams = (f) => {
   if (f.recruiterEmail) p.recruiter_email = f.recruiterEmail
   if (f.questionId) p.question_id = f.questionId
   if (f.status !== 'all') p.status = f.status
+  if (f.reportedQb?.length) p.reported_qb = f.reportedQb.join(',')
   return p
 }
 
-function ProblemTypeMultiSelect({ selected, onChange, options }) {
+function ProblemTypeMultiSelect({ selected, onChange, options, placeholder = 'All Types' }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -58,7 +60,7 @@ function ProblemTypeMultiSelect({ selected, onChange, options }) {
   }
 
   const label = selected.length === 0
-    ? 'All Types'
+    ? placeholder
     : selected.length === 1
     ? selected[0]
     : `${selected.length} types selected`
@@ -301,6 +303,15 @@ export default function ReportedQuestions() {
               placeholder="e.g. 123456"
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
           </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">QB Type</label>
+            <ProblemTypeMultiSelect
+              selected={draft.reportedQb}
+              onChange={(val) => setDraft((p) => ({ ...p, reportedQb: val }))}
+              options={options?.qb_types || ['Issue from RTU QB', 'Issue from Customer QB']}
+              placeholder="All QB Types"
+            />
+          </div>
         </div>
         <div className="flex gap-2">
           <button onClick={applyFilters}
@@ -329,6 +340,7 @@ export default function ReportedQuestions() {
                 <th className="px-4 py-3 text-left font-medium">Candidate</th>
                 <th className="px-4 py-3 text-left font-medium">Recruiter</th>
                 <th className="px-4 py-3 text-left font-medium">Skill</th>
+                <th className="px-4 py-3 text-left font-medium">QB Type</th>
                 <th className="px-4 py-3 text-left font-medium">Q. ID</th>
                 <th className="px-4 py-3 text-left font-medium">Q. Type</th>
                 <th className="px-4 py-3 text-left font-medium">Problem Type</th>
@@ -342,10 +354,10 @@ export default function ReportedQuestions() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {isLoading && (
-                <tr><td colSpan={13} className="text-center py-10 text-gray-400">Loading…</td></tr>
+                <tr><td colSpan={14} className="text-center py-10 text-gray-400">Loading…</td></tr>
               )}
               {!isLoading && list?.items?.length === 0 && (
-                <tr><td colSpan={13} className="text-center py-10 text-gray-400">No issues found</td></tr>
+                <tr><td colSpan={14} className="text-center py-10 text-gray-400">No issues found</td></tr>
               )}
               {list?.items?.map((row) => (
                 <tr key={row.id} className="hover:bg-gray-50/60 transition-colors">
@@ -361,6 +373,16 @@ export default function ReportedQuestions() {
                     {row.recruiter_email || '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-700 max-w-[110px] truncate text-xs">{row.skill || '—'}</td>
+                  <td className="px-4 py-3">
+                    {row.reported_qb ? (
+                      <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap
+                        ${row.reported_qb === 'Issue from RTU QB'
+                          ? 'bg-purple-50 text-purple-700'
+                          : 'bg-blue-50 text-blue-700'}`}>
+                        {row.reported_qb === 'Issue from RTU QB' ? 'iMocha QB' : 'Customer QB'}
+                      </span>
+                    ) : '—'}
+                  </td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{row.question_id || '—'}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{row.que_type || '—'}</td>
                   <td className="px-4 py-3">
