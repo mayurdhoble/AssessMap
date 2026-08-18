@@ -71,7 +71,7 @@ def _where(
         params["date_from"] = date_from
 
     if date_to:
-        clauses.append("reported_on < :date_to::date + interval '1 day'")
+        clauses.append("reported_on < CAST(:date_to AS date) + interval '1 day'")
         params["date_to"] = date_to
 
     if problem_type:
