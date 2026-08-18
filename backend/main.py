@@ -78,9 +78,9 @@ async def lifespan(app: FastAPI):
             print("[Startup] Assessment table empty — triggering one-time immediate sync...")
             threading.Thread(target=_sync_assessments, daemon=True).start()
 
-        if not rq_info.get("loaded"):
-            print("[Startup] RQ table empty — triggering immediate RQ sync...")
-            threading.Thread(target=_sync_rq, daemon=True).start()
+        # Always sync RQ on every deploy so fresh data is loaded immediately
+        print("[Startup] Triggering RQ sync on deploy...")
+        threading.Thread(target=_sync_rq, daemon=True).start()
 
         scheduler.start()
         print("[Startup] MSSQL scheduler started (assessments 00:00, RQ 00:05 daily)")
