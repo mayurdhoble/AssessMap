@@ -106,6 +106,7 @@ JOIN QuestionBankMaster    qb   ON qb.QBId          = qm.QBId
 LEFT JOIN UserMaster       uctl ON uctl.UserId      = ctl.userId
 LEFT JOIN UserMaster       uinby ON uinby.UserId    = ti.InvitedBy
 LEFT JOIN QuestionTypeMaster qtm ON qtm.QueTypeId   = qm.QueTypeId
+WHERE qim.CreatedOn >= '2026-01-01'
 """
 
 
